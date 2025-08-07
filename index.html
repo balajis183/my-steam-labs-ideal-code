@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Blockly Code Generator</title>
+    <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+    <script src="./custom_blocks.js"></script>
+    <link rel="stylesheet" href="./style.css" />
+
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        font-family: sans-serif;
+      }
+
+      #navbar-placeholder {
+        width: 100%;
+      }
+
+      #topbar {
+        padding: 10px;
+        background: #f0f0f0;
+        border-bottom: 1px solid #ccc;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      #main-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: calc(100vh - 50px); /* fallback, updated dynamically */
+      }
+
+      #main {
+        display: flex;
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+      }
+
+      #blocklyDiv {
+        height: 100%;
+        width: 70%;
+        position: relative;
+        background: #fff;
+      }
+
+      #codeArea {
+        width: 30%;
+        height: 100%;
+        padding: 10px;
+        background: #fafafa;
+        border-left: 1px solid #ccc;
+        box-sizing: border-box;
+      }
+
+      /* Terminal Panel Styles */
+      #terminal-panel {
+        background: #1e1e1e;
+        color: #f0f0f0;
+        border-top: 1px solid #333;
+        display: none; /* Hidden by default */
+        flex-direction: column;
+        min-height: 200px;
+        max-height: 50vh;
+      }
+
+      #terminal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: #2d2d2d;
+        border-bottom: 1px solid #444;
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      #terminal-title {
+        color: #ccc;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      #terminal-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .terminal-btn {
+        background: #444;
+        color: #fff;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 10px;
+        transition: background 0.2s;
+      }
+
+      .terminal-btn:hover {
+        background: #555;
+      }
+
+      #terminal-resize-handle {
+        height: 4px;
+        background: #444;
+        cursor: ns-resize;
+        transition: background 0.2s;
+      }
+
+      #terminal-resize-handle:hover {
+        background: #666;
+      }
+
+      #terminal-content {
+        flex: 1;
+        padding: 12px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        overflow-y: auto;
+        background: #1e1e1e;
+      }
+
+      #terminal-output {
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        line-height: 1.4;
+      }
+
+      /* Terminal toggle button */
+      #terminal-toggle {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #007acc;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        z-index: 1000;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      }
+
+      #terminal-toggle:hover {
+        background: #005a9e;
+      }
+
+      button {
+        margin-right: 10px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Navbar loaded dynamically -->
+    <div id="navbar-placeholder"></div>
+
+    <!-- Toolbar -->
+    <div id="topbar">
+      <button onclick="generateJavaScriptCode()">Generate JavaScript</button>
+      <button onclick="generatePythonCode()">Generate Python</button>
+      <button onclick="generateCppCode()">Generate C++</button>
+      <button onclick="generateCCode()">Generate C</button>
+      <button onclick="copyCode()">Copy Code</button>
+      <button id="checkConnectionBtn">Check Board Status</button>
+      <div id="connection-status" style="width:15px; height:15px; border-radius:50%; background-color:grey; display:inline-block; margin-left:10px;"></div>
+    </div>
+
+    <!-- Main container with terminal -->
+    <div id="main-container">
+      <!-- Main layout -->
+      <div id="main">
+        <div id="blocklyDiv"></div>
+        <div id="codeArea">
+          <iframe id="monacoEditor" src="monaco.html"></iframe>
+        </div>
+      </div>
+
+      <!-- Terminal Panel -->
+      <div id="terminal-panel">
+        <div id="terminal-header">
+          <span id="terminal-title">Terminal</span>
+          <div id="terminal-controls">
+            <button class="terminal-btn" onclick="clearTerminal()">Clear</button>
+            <button class="terminal-btn" onclick="toggleTerminal()">Hide</button>
+          </div>
+        </div>
+        <div id="terminal-resize-handle"></div>
+        <div id="terminal-content">
+          <pre id="terminal-output"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminal Toggle Button -->
+    <button id="terminal-toggle" onclick="toggleTerminal()">Show Terminal</button>
+
+    <!-- Blockly Toolbox -->
+    <xml id="toolbox" style="display: none">
+      <category name="Logic" colour="210">
+        <block type="controls_if"></block>
+        <block type="logic_compare"></block>
+        <block type="logic_operation"></block>
+        <block type="logic_negate"></block>
+        <block type="logic_boolean"></block>
+      </category>
+      <category name="Loops" colour="120">
+        <block type="controls_repeat_ext">
+          <value name="TIMES">
+            <block type="math_number">
+              <field name="NUM">10</field>
+            </block>
+          </value>
+        </block>
+        <block type="controls_whileUntil"></block>
+      </category>
+      <category name="Math" colour="230">
+        <block type="math_number"></block>
+        <block type="math_arithmetic"></block>
+      </category>
+      <category name="Pin I/O" colour="230">
+        <block type="set_pin"></block>
+        <block type="read_pin"></block>
+      </category>
+      <category name="Motors" colour="20">
+        <block type="dc_motor"></block>
+        <block type="servo_motor"></block>
+      </category>
+      <category name="Sensors" colour="120">
+        <block type="ldr_sensor"></block>
+        <block type="ir_sensor"></block>
+        <block type="temp_sensor"></block>
+        <block type="ultrasonic_sensor"></block>
+        <block type="touch_sensor"></block>
+        <block type="color_sensor"></block>
+      </category>
+      <category name="Joystick" colour="290">
+        <block type="joystick1"></block>
+        <block type="joystick2"></block>
+      </category>
+      <category name="OLED Display" colour="330">
+        <block type="oled_show"></block>
+      </category>
+      <category name="Text" colour="160">
+        <block type="text"></block>
+        <block type="text_print"></block>
+      </category>
+      <category name="Variables" colour="330" custom="VARIABLE"></category>
+      <category name="Functions" colour="290" custom="PROCEDURE"></category>
+    </xml>
+
+    <script>
+      let workspace;
+      let terminalVisible = false;
+      let isResizing = false;
+      let startY = 0;
+      let startHeight = 0;
+
+      fetch('navbar.html')
+        .then(res => res.text())
+        .then(html => {
+          document.getElementById('navbar-placeholder').innerHTML = html;
+
+          // Adjust #main-container height after navbar loads
+          requestAnimationFrame(() => {
+            const navbarHeight = document.getElementById('navbar-placeholder').offsetHeight || 0;
+            const topbarHeight = document.getElementById('topbar').offsetHeight || 0;
+            document.getElementById('main-container').style.height = `calc(100vh - ${navbarHeight + topbarHeight}px)`;
+            Blockly.svgResize(workspace);
+          });
+        });
+
+      workspace = Blockly.inject('blocklyDiv', {
+        toolbox: document.getElementById('toolbox'),
+        trashcan: true,
+        scrollbars: true
+      });
+
+      window.addEventListener('resize', () => Blockly.svgResize(workspace));
+      Blockly.svgResize(workspace);
+
+      function sendCodeToMonaco(code, language = 'javascript') {
+        const editorWindow = document.getElementById('monacoEditor').contentWindow;
+        editorWindow.postMessage({ code, language }, '*');
+      }
+
+      function copyCode() {
+        const editorWindow = document.getElementById('monacoEditor').contentWindow;
+        if (editorWindow && editorWindow.getEditorValue) {
+          const code = editorWindow.getEditorValue();
+          navigator.clipboard.writeText(code).then(() => {
+            alert('Code copied to clipboard!');
+          }).catch(() => {
+            alert('Failed to copy code. Please select and copy manually.');
+          });
+        }
+      }
+
+      function indent(code) {
+        return code.split('\n').map(line => '  ' + line.trim()).join('\n');
+      }
+
+      function generateJavaScriptCode() {
+        const code = Blockly.JavaScript.workspaceToCode(workspace);
+        sendCodeToMonaco(code, 'javascript');
+        setCurrentLanguage('javascript');
+      }
+
+      function generatePythonCode() {
+        const code = Blockly.JavaScript.workspaceToCode(workspace)
+          .replace(/console\.log/g, 'print')
+          .replace(/;/g, '')
+          .replace(/\b(var|let|const)\s+/g, '')
+          .replace(/\bfunction\b/g, 'def')
+          .replace(/\{/g, ':')
+          .replace(/\}/g, '');
+        sendCodeToMonaco(code, 'python');
+        setCurrentLanguage('python');
+      }
+
+      function generateCppCode() {
+        const raw = Blockly.JavaScript.workspaceToCode(workspace);
+        const code = `
+#include <Arduino.h>
+void setup() {
+  // Setup code
+}
+void loop() {
+${indent(raw)}
+}`;
+        sendCodeToMonaco(code, 'cpp');
+        setCurrentLanguage('cpp');
+      }
+
+      function generateCCode() {
+        const raw = Blockly.JavaScript.workspaceToCode(workspace);
+        const code = `
+#include <stdio.h>
+int main() {
+${indent(raw)}
+  return 0;
+}`;
+        sendCodeToMonaco(code, 'c');
+        setCurrentLanguage('c');
+      }
+
+      // Terminal functions
+      function toggleTerminal() {
+        const terminalPanel = document.getElementById('terminal-panel');
+        const toggleBtn = document.getElementById('terminal-toggle');
+        
+        if (terminalVisible) {
+          terminalPanel.style.display = 'none';
+          toggleBtn.textContent = 'Show Terminal';
+          terminalVisible = false;
+        } else {
+          terminalPanel.style.display = 'flex';
+          toggleBtn.textContent = 'Hide Terminal';
+          terminalVisible = true;
+        }
+        
+        // Resize Blockly workspace
+        setTimeout(() => Blockly.svgResize(workspace), 100);
+      }
+
+      function clearTerminal() {
+        const terminalOutput = document.getElementById('terminal-output');
+        if (terminalOutput) {
+          terminalOutput.textContent = '';
+        }
+      }
+
+      // Make functions globally available
+      window.toggleTerminal = toggleTerminal;
+      window.clearTerminal = clearTerminal;
+
+      // Terminal resize functionality
+      function setupTerminalResize() {
+        const resizeHandle = document.getElementById('terminal-resize-handle');
+        const terminalPanel = document.getElementById('terminal-panel');
+        const mainContainer = document.getElementById('main-container');
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+          isResizing = true;
+          startY = e.clientY;
+          startHeight = terminalPanel.offsetHeight;
+          document.body.style.cursor = 'ns-resize';
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isResizing) return;
+          
+          const deltaY = startY - e.clientY;
+          const newHeight = Math.max(200, Math.min(50, startHeight + deltaY));
+          terminalPanel.style.height = `${newHeight}px`;
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+            Blockly.svgResize(workspace);
+          }
+        });
+      }
+
+      // Initialize terminal resize
+      document.addEventListener('DOMContentLoaded', () => {
+        setupTerminalResize();
+      });
+
+      // Board connection status check
+      const statusIndicator = document.getElementById('connection-status');
+      document.getElementById('checkConnectionBtn').addEventListener('click', async () => {
+        statusIndicator.style.backgroundColor = 'grey';
+        const connected = await window.electronAPI?.checkBoard?.();
+        statusIndicator.style.backgroundColor = connected ? 'green' : 'red';
+      });
+    </script>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

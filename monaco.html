@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Monaco Editor</title>
+  <style>
+    html, body, #container {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+  <script>
+    // Monaco Editor configuration
+    require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@latest/min/vs' } });
+
+    require(['vs/editor/editor.main'], function () {
+      window.editor = monaco.editor.create(document.getElementById('container'), {
+        value: '',  // Default: Empty, will be replaced by the parent window
+        language: 'javascript',  // Default language
+        theme: 'vs-dark',  // Default theme
+        automaticLayout: true  // Automatically adjusts layout
+      });
+
+      // Expose functions for parent window to access
+      window.getEditorValue = function() {
+        return window.editor ? window.editor.getValue() : '';
+      };
+
+      window.getEditorLanguage = function() {
+        if (window.editor && window.editor.getModel()) {
+          return window.editor.getModel().getLanguageId();
+        }
+        return 'javascript'; // Default fallback
+      };
+
+      window.setEditorValue = function(code) {
+        if (window.editor) {
+          window.editor.setValue(code);
+        }
+      };
+
+      window.setEditorLanguage = function(language) {
+        if (window.editor && window.editor.getModel()) {
+          monaco.editor.setModelLanguage(window.editor.getModel(), language);
+        }
+      };
+
+      // Listen for messages from the parent window (index.html)
+      window.addEventListener('message', function(event) {
+        const { code, language } = event.data;
+
+        if (typeof code === 'string') {
+          // Update the editor with the code received from the parent page
+          window.setEditorValue(code);
+
+          // Set the language of Monaco Editor
+          if (language) {
+            window.setEditorLanguage(language);
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
