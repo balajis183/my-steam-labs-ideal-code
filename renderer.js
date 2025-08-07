@@ -75,10 +75,113 @@ function needsHardwarePort(code) {
   return hardwareModules.some(module => code.includes(module));
 }
 
-// Multi-language compile function
+// Helper function to detect if C++ code needs hardware
+function needsHardwarePortCpp(code) {
+  const hardwareModules = [
+    '#include <Arduino.h>',
+    '#include <ESP32.h>',
+    '#include <WiFi.h>',
+    '#include <BluetoothSerial.h>',
+    'Serial.begin',
+    'pinMode',
+    'digitalWrite',
+    'digitalRead',
+    'analogRead',
+    'analogWrite',
+    'WiFi.begin',
+    'BluetoothSerial',
+    'ESP32',
+    'Arduino.h'
+  ];
+  
+  return hardwareModules.some(module => code.includes(module));
+}
+
+// Auto-detect language and hardware requirements
+async function autoDetectLanguage() {
+  const code = getCurrentCode();
+  
+  if (!code.trim()) {
+    appendTerminalOutput('❌ No code to analyze. Please generate some code first.');
+    return;
+  }
+  
+  appendTerminalOutput('🔍 Auto-detecting language and hardware requirements...');
+  
+  // Detect language
+  let detectedLanguage = 'unknown';
+  let needsHardware = false;
+  let hardwareType = 'none';
+  
+  if (code.includes('import ') || code.includes('print(') || code.includes('def ')) {
+    detectedLanguage = 'python';
+    needsHardware = needsHardwarePort(code);
+    hardwareType = needsHardware ? 'MicroPython (ESP32/Pico)' : 'Standard Python';
+  } else if (code.includes('#include') || code.includes('int main()') || code.includes('void setup()')) {
+    detectedLanguage = 'cpp';
+    needsHardware = needsHardwarePortCpp(code);
+    hardwareType = needsHardware ? 'Arduino/ESP32' : 'Standard C++';
+  } else if (code.includes('function') || code.includes('console.log') || code.includes('var ') || code.includes('let ')) {
+    detectedLanguage = 'javascript';
+    needsHardware = false;
+    hardwareType = 'Node.js';
+  } else if (code.includes('#include <stdio.h>') || code.includes('printf(')) {
+    detectedLanguage = 'c';
+    needsHardware = false;
+    hardwareType = 'Standard C';
+  }
+  
+  // Set the detected language
+  setCurrentLanguage(detectedLanguage);
+  
+  // Display results
+  appendTerminalOutput(`✅ Language detected: ${detectedLanguage.toUpperCase()}`);
+  appendTerminalOutput(`🔧 Hardware type: ${hardwareType}`);
+  
+  if (needsHardware) {
+    if (currentPort) {
+      appendTerminalOutput(`✅ Hardware port selected: ${currentPort}`);
+      appendTerminalOutput(`💡 Ready to upload and run on hardware!`);
+    } else {
+      appendTerminalOutput(`⚠️ Hardware code detected but no port selected`);
+      appendTerminalOutput(`💡 Please select a port to upload to hardware`);
+    }
+  } else {
+    appendTerminalOutput(`✅ Standard code - can run locally`);
+    appendTerminalOutput(`💡 Use "Run" button to execute locally`);
+  }
+  
+  appendTerminalOutput(`🎯 Auto-detection complete!`);
+}
+
+// Helper to get selected language from dropdown or auto-detect
+function getSelectedLanguage(code) {
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    const selected = langSelect.value;
+    if (selected === 'python' || selected === 'cpp') {
+      return selected;
+    }
+  }
+  // Fallback to auto-detect
+  // (existing auto-detect logic)
+  if (code.includes('import ') || code.includes('print(') || code.includes('def ')) {
+    return 'python';
+  } else if (code.includes('#include') || code.includes('int main()') || code.includes('void setup()')) {
+    return 'cpp';
+  } else if (code.includes('function') || code.includes('console.log') || code.includes('var ') || code.includes('let ')) {
+    return 'javascript';
+  } else if (code.includes('#include <stdio.h>') || code.includes('printf(')) {
+    return 'c';
+  }
+  return lastGeneratedLanguage || 'python';
+}
+
+// Update compileCode, uploadCode, runCode to use getSelectedLanguage
 async function compileCode() {
   const code = getCurrentCode();
-  const language = getCurrentLanguage();
+  const language = getSelectedLanguage(code);
+  setCurrentLanguage(language);
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to compile. Please generate some code first.');
@@ -123,10 +226,10 @@ async function compileCode() {
   }
 }
 
-// Multi-language upload function
 async function uploadCode() {
   const code = getCurrentCode();
-  const language = getCurrentLanguage();
+  const language = getSelectedLanguage(code);
+  setCurrentLanguage(language);
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to upload. Please generate some code first.');
@@ -145,6 +248,19 @@ async function uploadCode() {
     
     if (!needsHardware) {
       appendTerminalOutput('💡 This is standard Python code. Use "Run" instead of "Upload" to execute locally.');
+      return;
+    }
+  } else if (language === 'cpp') {
+    const needsHardware = needsHardwarePortCpp(code);
+    
+    if (needsHardware && !currentPort) {
+      appendTerminalOutput('❌ No port selected. Please select a port first.');
+      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32) and needs to be uploaded to hardware.');
+      return;
+    }
+    
+    if (!needsHardware) {
+      appendTerminalOutput('💡 This is standard C++ code. Use "Run" instead of "Upload" to execute locally.');
       return;
     }
   } else if (!currentPort) {
@@ -187,10 +303,10 @@ async function uploadCode() {
   }
 }
 
-// Multi-language run function
 async function runCode() {
   const code = getCurrentCode();
-  const language = getCurrentLanguage();
+  const language = getSelectedLanguage(code);
+  setCurrentLanguage(language);
   
   console.log(`🎯 Running code in language: ${language}, currentPort: ${currentPort}`);
   
@@ -214,6 +330,21 @@ async function runCode() {
       console.log('✅ Python code uses hardware modules, port validation passed');
     } else {
       console.log('✅ Standard Python code, will run locally');
+    }
+  } else if (language === 'cpp') {
+    const needsHardware = needsHardwarePortCpp(code);
+    
+    if (needsHardware && !currentPort) {
+      console.log('❌ Port validation failed: C++ code uses hardware modules but no port selected');
+      appendTerminalOutput('❌ No port selected. Please select a port first.');
+      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32)');
+      return;
+    }
+    
+    if (needsHardware) {
+      console.log('✅ C++ code uses hardware modules, port validation passed');
+    } else {
+      console.log('✅ Standard C++ code, will run locally');
     }
   }
   
@@ -251,6 +382,7 @@ window.compileCode = compileCode;
 window.uploadCode = uploadCode;
 window.runCode = runCode;
 window.setCurrentLanguage = setCurrentLanguage;
+window.autoDetectLanguage = autoDetectLanguage; // Make autoDetectLanguage globally available
 
 // Serial port management
 async function refreshPorts() {

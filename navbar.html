@@ -83,6 +83,10 @@
       background-color: #FF8C00;
       color: white;
     }
+    .auto-detect {
+      background-color: #4CAF50;
+      color: white;
+    }
     .icon-button {
       background: none;
       border: none;
@@ -121,6 +125,11 @@
     <select id="portSelect"></select>
     
     <button onclick="refreshPorts()">Refresh Ports</button>
+    <select id="languageSelect" class="language-select">
+      <option value="auto">Auto Detect</option>
+      <option value="python">Python</option>
+      <option value="cpp">C++</option>
+    </select>
     <button class="button run" onclick="runCode()">Run</button>
     <button class="button upload" onclick="uploadCode()">Upload</button>
     <button class="button compile" onclick="compileCode()">Compile</button>

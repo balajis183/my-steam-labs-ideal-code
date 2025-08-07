@@ -158,6 +158,22 @@ footer {
   box-sizing: border-box;
 }
 
+.language-select {
+  background-color: #f0f0f0;
+  color: #333;
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 12px;
+  margin: 0 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-select:focus {
+  border-color: #5A59FF;
+}
+
 /* Responsive Styles */
 @media (max-width: 768px) {
   #content {
