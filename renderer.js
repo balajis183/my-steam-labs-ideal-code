@@ -568,6 +568,58 @@ function waitForElement(id, callback) {
   });
 }
 
+// Save Code Function
+async function saveCode() {
+  try {
+    const code = getCurrentCode();
+    const language = getCurrentLanguage();
+    
+    if (!code || code.trim() === '') {
+      alert('No code to save. Please generate some code first.');
+      return;
+    }
+    
+    const result = await window.electronAPI.saveCode(code, language);
+    
+    if (result.success) {
+      appendTerminalOutput(`✅ Code saved successfully!`);
+    } else {
+      appendTerminalOutput(`❌ Failed to save code: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Error saving code:', error);
+    appendTerminalOutput(`❌ Error saving code: ${error.message}`);
+  }
+}
+
+// Load Code Function
+async function loadCode() {
+  try {
+    const language = getCurrentLanguage();
+    const result = await window.electronAPI.loadCode(language);
+    
+    if (result.success) {
+      // Set the loaded code in the Monaco editor
+      const editorWindow = document.getElementById('monacoEditor').contentWindow;
+      if (editorWindow && editorWindow.setEditorValue) {
+        editorWindow.setEditorValue(result.code);
+        appendTerminalOutput(`✅ Code loaded successfully from: ${result.filePath}`);
+      } else {
+        appendTerminalOutput(`⚠️ Editor not ready. Please try again.`);
+      }
+    } else {
+      appendTerminalOutput(`❌ Failed to load code: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Error loading code:', error);
+    appendTerminalOutput(`❌ Error loading code: ${error.message}`);
+  }
+}
+
+// Make functions globally available
+window.saveCode = saveCode;
+window.loadCode = loadCode;
+
 // Wait for portSelect after navbar loads
 waitForElement('portSelect', () => {
   setupPortSelection();

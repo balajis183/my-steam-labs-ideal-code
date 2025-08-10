@@ -355,6 +355,36 @@ ipcMain.handle('save-code', async (_e, code, language = 'python') => {
   }
 });
 
+// ---- Load Code Function ----
+ipcMain.handle('load-code', async (_e, language = 'python') => {
+  try {
+    const extensions = {
+      'python': 'py',
+      'javascript': 'js',
+      'cpp': 'cpp',
+      'c': 'c'
+    };
+    const ext = extensions[language] || 'txt';
+    
+    const { filePaths, canceled } = await dialog.showOpenDialog({
+      title: `Load ${language.charAt(0).toUpperCase() + language.slice(1)} Code`,
+      defaultPath: `main.${ext}`,
+      filters: [{ name: language.charAt(0).toUpperCase() + language.slice(1), extensions: [ext] }],
+      properties: ['openFile']
+    });
+    
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { success: false, error: 'Load cancelled.' };
+    }
+    
+    const filePath = filePaths[0];
+    const code = fs.readFileSync(filePath, 'utf-8');
+    return { success: true, code, filePath };
+  } catch (err) {
+    return { success: false, error: err.message }; 
+  }
+});
+
 // ---- Board Status Check ----
 ipcMain.handle('check-board', async () => {
   return new Promise((resolve, reject) => {

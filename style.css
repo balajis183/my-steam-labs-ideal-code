@@ -65,11 +65,20 @@ button:hover {
 
 /* Save and load button styles */
 #saveBtn, #loadBtn {
-  background-color: #007BFF;
+  background-color: #4CAF50;
 }
 
 #saveBtn:hover, #loadBtn:hover {
-  background-color: #0056b3;
+  background-color: #45a049;
+}
+
+/* Save Code and Load Code button styles */
+button[onclick="saveCode()"], button[onclick="loadCode()"] {
+  background-color: #4CAF50;
+}
+
+button[onclick="saveCode()"]:hover, button[onclick="loadCode()"]:hover {
+  background-color: #45a049;
 }
 
 /* C++ code button style */

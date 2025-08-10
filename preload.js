@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Save Code
   saveCode: (code, language) => ipcRenderer.invoke('save-code', code, language),
   
+  // Load Code
+  loadCode: (language) => ipcRenderer.invoke('load-code', language),
+  
   // Board Status
   checkBoard: () => ipcRenderer.invoke('check-board'),
   
