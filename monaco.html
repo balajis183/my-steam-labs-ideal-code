@@ -36,7 +36,7 @@
     require(['vs/editor/editor.main'], function () {
       // Create editor with improved configuration
       window.editor = monaco.editor.create(document.getElementById('container'), {
-        value: '// Start coding here...',
+        value: '',
         language: 'javascript',
         theme: 'vs-dark',
         automaticLayout: true,
@@ -62,7 +62,10 @@
         // Font improvements
         fontSize: 14,
         fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-        lineHeight: 20
+        lineHeight: 20,
+        
+        // Placeholder configuration
+        placeholder: '// Start coding here...'
       });
 
       // Ensure editor is focused and ready
