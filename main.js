@@ -24,7 +24,18 @@ function createWindow() {
       nodeIntegration: false
     }
   });
-  mainWindow.loadFile('index.html');
+  
+  // Load the loading screen first
+  mainWindow.loadFile('loading.html');
+  
+  // Listen for navigation to main app
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (navigationUrl.includes('index.html')) {
+      // Allow navigation to main app
+      console.log('🔄 Navigating to main application...');
+    }
+  });
+  
   mainWindow.on('closed', () => {
     if (currentPort && currentPort.isOpen) currentPort.close();
     mainWindow = null;

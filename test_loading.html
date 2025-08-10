@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Test Loading Screen</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #45a049;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Loading Screen Test</h1>
+    
+    <div class="test-section">
+        <h3>📹 Video File Test</h3>
+        <p>Testing if the Mysteam_Lab.mp4 video can be loaded:</p>
+        <button class="test-button" onclick="testVideo()">Test Video Loading</button>
+        <div id="video-status"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>🎬 Loading Screen Preview</h3>
+        <p>Preview the loading screen (will open in new window):</p>
+        <button class="test-button" onclick="openLoadingScreen()">Open Loading Screen</button>
+        <button class="test-button" onclick="openMainApp()">Open Main App</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>🔧 Functionality Test</h3>
+        <p>Test escape key and click functionality:</p>
+        <button class="test-button" onclick="testEscapeKey()">Test Escape Key</button>
+        <div id="functionality-status"></div>
+    </div>
+
+    <script>
+        function testVideo() {
+            const statusDiv = document.getElementById('video-status');
+            const video = document.createElement('video');
+            
+            video.onloadstart = () => {
+                statusDiv.innerHTML = '<div class="status info">🔄 Video loading started...</div>';
+            };
+            
+            video.onloadeddata = () => {
+                statusDiv.innerHTML = '<div class="status success">✅ Video loaded successfully!</div>';
+            };
+            
+            video.onerror = () => {
+                statusDiv.innerHTML = '<div class="status error">❌ Video failed to load</div>';
+            };
+            
+            video.src = './assets/Mysteam_Lab.mp4';
+            video.load();
+        }
+        
+        function openLoadingScreen() {
+            window.open('loading.html', '_blank', 'width=800,height=600');
+        }
+        
+        function openMainApp() {
+            window.open('index.html', '_blank', 'width=1200,height=800');
+        }
+        
+        function testEscapeKey() {
+            const statusDiv = document.getElementById('functionality-status');
+            statusDiv.innerHTML = '<div class="status info">⌨️ Press ESC key to test functionality...</div>';
+            
+            const handleEscape = (e) => {
+                if (e.key === 'Escape') {
+                    statusDiv.innerHTML = '<div class="status success">✅ Escape key detected!</div>';
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            
+            document.addEventListener('keydown', handleEscape);
+            
+            // Auto-remove listener after 10 seconds
+            setTimeout(() => {
+                document.removeEventListener('keydown', handleEscape);
+                if (statusDiv.innerHTML.includes('Press ESC key')) {
+                    statusDiv.innerHTML = '<div class="status error">⏰ Escape key test timed out</div>';
+                }
+            }, 10000);
+        }
+        
+        // Auto-test video on page load
+        window.onload = () => {
+            testVideo();
+        };
+    </script>
+</body>
+</html>
