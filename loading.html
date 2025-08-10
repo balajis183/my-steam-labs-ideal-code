@@ -13,22 +13,31 @@
             justify-content: center;
             align-items: center;
             font-family: 'Arial', sans-serif;
+            height: 100vh;
+            width: 100vw;
         }
 
         #loading-container {
             position: relative;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
+            overflow: hidden;
         }
 
         #loading-video {
-            width: 100%;
-            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
             object-fit: cover;
+            object-position: center;
             background: #000;
+            min-width: 100%;
+            min-height: 100%;
         }
 
         #skip-hint {
@@ -41,6 +50,7 @@
             padding: 10px 15px;
             border-radius: 5px;
             opacity: 0.7;
+            z-index: 10;
         }
         
     </style>
