@@ -9,6 +9,16 @@
       padding: 0;
       height: 100%;
       width: 100%;
+      overflow: hidden;
+    }
+    
+    #container {
+      position: relative;
+    }
+    
+    /* Ensure cursor is visible */
+    .monaco-editor .cursor {
+      display: block !important;
     }
   </style>
 </head>
@@ -17,54 +27,164 @@
   <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
   <script>
     // Monaco Editor configuration
-    require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@latest/min/vs' } });
+    require.config({ 
+      paths: { 
+        vs: 'https://unpkg.com/monaco-editor@latest/min/vs' 
+      } 
+    });
 
     require(['vs/editor/editor.main'], function () {
+      // Create editor with improved configuration
       window.editor = monaco.editor.create(document.getElementById('container'), {
-        value: '',  // Default: Empty, will be replaced by the parent window
-        language: 'javascript',  // Default language
-        theme: 'vs-dark',  // Default theme
-        automaticLayout: true  // Automatically adjusts layout
+        value: '// Start coding here...',
+        language: 'javascript',
+        theme: 'vs-dark',
+        automaticLayout: true,
+        
+        // Editing improvements
+        readOnly: false,  // Ensure not read-only
+        selectOnLineNumbers: true,
+        roundedSelection: false,
+        scrollBeyondLastLine: false,
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        
+        // Cursor and selection improvements
+        cursorBlinking: 'blink',
+        cursorSmoothCaretAnimation: true,
+        cursorWidth: 2,
+        
+        // Performance improvements
+        renderLineHighlight: 'all',
+        contextmenu: true,
+        mouseWheelZoom: true,
+        
+        // Font improvements
+        fontSize: 14,
+        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+        lineHeight: 20
+      });
+
+      // Ensure editor is focused and ready
+      setTimeout(() => {
+        if (window.editor) {
+          window.editor.focus();
+          console.log('Monaco Editor initialized and focused');
+        }
+      }, 100);
+
+      // Handle resize events
+      window.addEventListener('resize', () => {
+        if (window.editor) {
+          window.editor.layout();
+        }
       });
 
       // Expose functions for parent window to access
       window.getEditorValue = function() {
-        return window.editor ? window.editor.getValue() : '';
+        try {
+          return window.editor ? window.editor.getValue() : '';
+        } catch (error) {
+          console.error('Error getting editor value:', error);
+          return '';
+        }
       };
 
       window.getEditorLanguage = function() {
-        if (window.editor && window.editor.getModel()) {
-          return window.editor.getModel().getLanguageId();
+        try {
+          if (window.editor && window.editor.getModel()) {
+            return window.editor.getModel().getLanguageId();
+          }
+          return 'javascript';
+        } catch (error) {
+          console.error('Error getting editor language:', error);
+          return 'javascript';
         }
-        return 'javascript'; // Default fallback
       };
 
       window.setEditorValue = function(code) {
-        if (window.editor) {
-          window.editor.setValue(code);
+        try {
+          if (window.editor && typeof code === 'string') {
+            // Preserve cursor position if possible
+            const position = window.editor.getPosition();
+            window.editor.setValue(code);
+            
+            // Focus after setting value
+            setTimeout(() => {
+              window.editor.focus();
+              // Try to restore cursor position
+              if (position) {
+                try {
+                  window.editor.setPosition(position);
+                } catch (e) {
+                  // If position restoration fails, go to end
+                  window.editor.setPosition({
+                    lineNumber: window.editor.getModel().getLineCount(),
+                    column: 1
+                  });
+                }
+              }
+            }, 50);
+          }
+        } catch (error) {
+          console.error('Error setting editor value:', error);
         }
       };
 
       window.setEditorLanguage = function(language) {
-        if (window.editor && window.editor.getModel()) {
-          monaco.editor.setModelLanguage(window.editor.getModel(), language);
+        try {
+          if (window.editor && window.editor.getModel() && language) {
+            monaco.editor.setModelLanguage(window.editor.getModel(), language);
+            console.log('Language changed to:', language);
+          }
+        } catch (error) {
+          console.error('Error setting editor language:', error);
         }
       };
 
-      // Listen for messages from the parent window (index.html)
+      // Enhanced message listener with better error handling
       window.addEventListener('message', function(event) {
-        const { code, language } = event.data;
+        try {
+          if (!event.data) return;
+          
+          const { code, language } = event.data;
+          
+          console.log('Received message:', { code: typeof code, language });
 
-        if (typeof code === 'string') {
-          // Update the editor with the code received from the parent page
-          window.setEditorValue(code);
+          if (typeof code === 'string') {
+            window.setEditorValue(code);
+          }
 
-          // Set the language of Monaco Editor
-          if (language) {
+          if (language && typeof language === 'string') {
             window.setEditorLanguage(language);
           }
+        } catch (error) {
+          console.error('Error handling message:', error);
         }
       });
+
+      // Debug function to check editor state
+      window.checkEditorState = function() {
+        console.log('Editor state:', {
+          exists: !!window.editor,
+          hasModel: !!(window.editor && window.editor.getModel()),
+          readOnly: window.editor ? window.editor.getConfiguration().readOnly : 'unknown',
+          focused: document.activeElement,
+          value: window.editor ? window.editor.getValue().substring(0, 50) + '...' : 'no editor'
+        });
+      };
+
+      // Auto-check editor state periodically (for debugging)
+      if (window.location.search.includes('debug')) {
+        setInterval(() => {
+          window.checkEditorState();
+        }, 5000);
+      }
+    });
+
+    // Handle potential loading errors
+    window.addEventListener('error', function(event) {
+      console.error('Monaco Editor Error:', event.error);
     });
   </script>
 </body>
