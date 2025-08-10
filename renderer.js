@@ -25,6 +25,30 @@ function clearTerminal() {
 // Make clearTerminal globally available
 window.clearTerminal = clearTerminal;
 
+// Function to show terminal (used by compile function)
+function showTerminal() {
+  const terminalPanel = document.getElementById('terminal-panel');
+  const toggleBtn = document.getElementById('terminal-toggle');
+  
+  if (terminalPanel && toggleBtn) {
+    terminalPanel.style.display = 'flex';
+    toggleBtn.textContent = 'Hide Terminal';
+    // Update the global terminalVisible state
+    if (typeof window.terminalVisible !== 'undefined') {
+      window.terminalVisible = true;
+    }
+    // Resize Blockly workspace
+    setTimeout(() => {
+      if (typeof Blockly !== 'undefined' && typeof Blockly.svgResize === 'function') {
+        Blockly.svgResize(workspace);
+      }
+    }, 100);
+  }
+}
+
+// Make showTerminal globally available
+window.showTerminal = showTerminal;
+
 // Get current code from Monaco editor
 function getCurrentCode() {
   const editorWindow = document.getElementById('monacoEditor').contentWindow;
@@ -187,6 +211,9 @@ async function compileCode() {
     appendTerminalOutput('❌ No code to compile. Please generate some code first.');
     return;
   }
+  
+  // Automatically show terminal when compiling
+  showTerminal();
   
   appendTerminalOutput(`🔄 Compiling ${language} code...`);
   
