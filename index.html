@@ -219,8 +219,11 @@
     <xml id="toolbox" style="display: none">
       <category name="Logic" colour="210">
         <block type="controls_if"></block>
+        <block type="enhanced_if"></block>
         <block type="logic_compare"></block>
+        <block type="enhanced_compare"></block>
         <block type="logic_operation"></block>
+        <block type="enhanced_logic"></block>
         <block type="logic_negate"></block>
         <block type="logic_boolean"></block>
       </category>
@@ -261,11 +264,42 @@
       <category name="OLED Display" colour="330">
         <block type="oled_show"></block>
       </category>
+      <category name="Time" colour="195">
+        <block type="time_delay">
+          <value name="TIME">
+            <block type="math_number">
+              <field name="NUM">1000</field>
+            </block>
+          </value>
+        </block>
+      </category>
+      <category name="My Program" colour="160">
+        <block type="my_program"></block>
+      </category>
       <category name="Text" colour="160">
         <block type="text"></block>
         <block type="text_print"></block>
       </category>
-      <category name="Variables" colour="330" custom="VARIABLE"></category>
+      <category name="Variables" colour="330">
+        <button text="Create variable..." callbackKey="CREATE_VARIABLE"></button>
+        <block type="variables_declare">
+          <field name="VAR" id="variable_id_1" variabletype="">i_count</field>
+        </block>
+        <block type="variables_define">
+          <field name="VAR" id="variable_id_1" variabletype="">i_count</field>
+        </block>
+        <block type="math_change">
+          <field name="VAR" id="variable_id_1" variabletype="">i_count</field>
+          <value name="DELTA">
+            <block type="math_number">
+              <field name="NUM">1</field>
+            </block>
+          </value>
+        </block>
+        <block type="variables_get">
+          <field name="VAR" id="variable_id_1" variabletype="">i_count</field>
+        </block>
+      </category>
       <category name="Functions" colour="290" custom="PROCEDURE"></category>
     </xml>
 
@@ -275,6 +309,394 @@
       let isResizing = false;
       let startY = 0;
       let startHeight = 0;
+
+      // Define custom blocks before initializing Blockly
+      function defineCustomBlocks() {
+        // My Program block
+        Blockly.Blocks['my_program'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("? My Program");
+            this.appendStatementInput("PROGRAM")
+                .setCheck(null);
+            this.setColour(160);
+            this.setTooltip("Main program block");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['my_program'] = function(block) {
+          var statements_program = Blockly.JavaScript.statementToCode(block, 'PROGRAM');
+          var code = '// My Program\n' + statements_program;
+          return code;
+        };
+
+        // Time delay block
+        Blockly.Blocks['time_delay'] = {
+          init: function() {
+            this.appendValueInput("TIME")
+                .setCheck("Number")
+                .appendField("Time");
+            this.appendDummyInput()
+                .appendField("ms");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(195);
+            this.setTooltip("Wait for specified milliseconds");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['time_delay'] = function(block) {
+          var value_time = Blockly.JavaScript.valueToCode(block, 'TIME', Blockly.JavaScript.ORDER_ATOMIC);
+          var code = 'delay(' + value_time + ');\n';
+          return code;
+        };
+
+        // Enhanced if block to match your image
+        Blockly.Blocks['enhanced_if'] = {
+          init: function() {
+            this.appendValueInput("IF0")
+                .setCheck("Boolean")
+                .appendField("if");
+            this.appendStatementInput("DO0")
+                .setCheck(null)
+                .appendField("do");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(210);
+            this.setTooltip("If condition is true, execute statements");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['enhanced_if'] = function(block) {
+          var value_if0 = Blockly.JavaScript.valueToCode(block, 'IF0', Blockly.JavaScript.ORDER_NONE);
+          var statements_do0 = Blockly.JavaScript.statementToCode(block, 'DO0');
+          var code = 'if (' + value_if0 + ') {\n' + statements_do0 + '}\n';
+          return code;
+        };
+
+        // Enhanced comparison block
+        Blockly.Blocks['enhanced_compare'] = {
+          init: function() {
+            this.appendValueInput("A")
+                .setCheck(null);
+            this.appendDummyInput()
+                .appendField(new Blockly.FieldDropdown([["==","EQ"], ["≠","NEQ"], [">","GT"], ["<","LT"], ["≥","GTE"], ["≤","LTE"]]), "OP");
+            this.appendValueInput("B")
+                .setCheck(null);
+            this.setInputsInline(true);
+            this.setOutput(true, "Boolean");
+            this.setColour(210);
+            this.setTooltip("Compare two values");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['enhanced_compare'] = function(block) {
+          var OPERATORS = {
+            'EQ': '==',
+            'NEQ': '!=',
+            'LT': '<',
+            'LTE': '<=',
+            'GT': '>',
+            'GTE': '>='
+          };
+          var operator = OPERATORS[block.getFieldValue('OP')];
+          var order = (operator == '==' || operator == '!=') ?
+              Blockly.JavaScript.ORDER_EQUALITY : Blockly.JavaScript.ORDER_RELATIONAL;
+          var argument0 = Blockly.JavaScript.valueToCode(block, 'A', order) || '0';
+          var argument1 = Blockly.JavaScript.valueToCode(block, 'B', order) || '0';
+          var code = argument0 + ' ' + operator + ' ' + argument1;
+          return [code, order];
+        };
+
+        // Enhanced logic operation block
+        Blockly.Blocks['enhanced_logic'] = {
+          init: function() {
+            this.appendValueInput("A")
+                .setCheck("Boolean");
+            this.appendDummyInput()
+                .appendField(new Blockly.FieldDropdown([["&&","AND"], ["||","OR"]]), "OP");
+            this.appendValueInput("B")
+                .setCheck("Boolean");
+            this.setInputsInline(true);
+            this.setOutput(true, "Boolean");
+            this.setColour(210);
+            this.setTooltip("Logic operation between two boolean values");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['enhanced_logic'] = function(block) {
+          var operator = (block.getFieldValue('OP') == 'AND') ? '&&' : '||';
+          var order = (operator == '&&') ? Blockly.JavaScript.ORDER_LOGICAL_AND :
+              Blockly.JavaScript.ORDER_LOGICAL_OR;
+          var argument0 = Blockly.JavaScript.valueToCode(block, 'A', order);
+          var argument1 = Blockly.JavaScript.valueToCode(block, 'B', order);
+          if (!argument0 && !argument1) {
+            argument0 = 'false';
+            argument1 = 'false';
+          } else {
+            var defaultArgument = (operator == '&&') ? 'true' : 'false';
+            if (!argument0) {
+              argument0 = defaultArgument;
+            }
+            if (!argument1) {
+              argument1 = defaultArgument;
+            }
+          }
+          var code = argument0 + ' ' + operator + ' ' + argument1;
+          return [code, order];
+        };
+
+        // Pin I/O blocks
+        Blockly.Blocks['set_pin'] = {
+          init: function() {
+            this.appendValueInput("PIN")
+                .setCheck("Number")
+                .appendField("set pin");
+            this.appendValueInput("VALUE")
+                .setCheck("Boolean")
+                .appendField("to");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(230);
+            this.setTooltip("Set digital pin value");
+          }
+        };
+
+        Blockly.JavaScript['set_pin'] = function(block) {
+          var pin = Blockly.JavaScript.valueToCode(block, 'PIN', Blockly.JavaScript.ORDER_ATOMIC);
+          var value = Blockly.JavaScript.valueToCode(block, 'VALUE', Blockly.JavaScript.ORDER_ATOMIC);
+          return `digitalWrite(${pin}, ${value});\n`;
+        };
+
+        Blockly.Blocks['read_pin'] = {
+          init: function() {
+            this.appendValueInput("PIN")
+                .setCheck("Number")
+                .appendField("read pin");
+            this.setOutput(true, "Boolean");
+            this.setColour(230);
+            this.setTooltip("Read digital pin value");
+          }
+        };
+
+        Blockly.JavaScript['read_pin'] = function(block) {
+          var pin = Blockly.JavaScript.valueToCode(block, 'PIN', Blockly.JavaScript.ORDER_ATOMIC);
+          return [`digitalRead(${pin})`, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        // Motor blocks
+        Blockly.Blocks['dc_motor'] = {
+          init: function() {
+            this.appendValueInput("SPEED")
+                .setCheck("Number")
+                .appendField("DC motor speed");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(20);
+            this.setTooltip("Control DC motor speed");
+          }
+        };
+
+        Blockly.JavaScript['dc_motor'] = function(block) {
+          var speed = Blockly.JavaScript.valueToCode(block, 'SPEED', Blockly.JavaScript.ORDER_ATOMIC);
+          return `motorSpeed(${speed});\n`;
+        };
+
+        Blockly.Blocks['servo_motor'] = {
+          init: function() {
+            this.appendValueInput("ANGLE")
+                .setCheck("Number")
+                .appendField("servo angle");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(20);
+            this.setTooltip("Set servo motor angle");
+          }
+        };
+
+        Blockly.JavaScript['servo_motor'] = function(block) {
+          var angle = Blockly.JavaScript.valueToCode(block, 'ANGLE', Blockly.JavaScript.ORDER_ATOMIC);
+          return `servoWrite(${angle});\n`;
+        };
+
+        // Sensor blocks
+        Blockly.Blocks['ldr_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("LDR sensor");
+            this.setOutput(true, "Number");
+            this.setColour(120);
+            this.setTooltip("Read light sensor value");
+          }
+        };
+
+        Blockly.JavaScript['ldr_sensor'] = function(block) {
+          return ['analogRead(A0)', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['ir_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("IR sensor");
+            this.setOutput(true, "Boolean");
+            this.setColour(120);
+            this.setTooltip("Read IR sensor value");
+          }
+        };
+
+        Blockly.JavaScript['ir_sensor'] = function(block) {
+          return ['digitalRead(2)', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['temp_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("temperature sensor");
+            this.setOutput(true, "Number");
+            this.setColour(120);
+            this.setTooltip("Read temperature sensor value");
+          }
+        };
+
+        Blockly.JavaScript['temp_sensor'] = function(block) {
+          return ['readTemperature()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['ultrasonic_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("ultrasonic distance");
+            this.setOutput(true, "Number");
+            this.setColour(120);
+            this.setTooltip("Read ultrasonic sensor distance");
+          }
+        };
+
+        Blockly.JavaScript['ultrasonic_sensor'] = function(block) {
+          return ['getDistance()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['touch_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("touch sensor");
+            this.setOutput(true, "Boolean");
+            this.setColour(120);
+            this.setTooltip("Read touch sensor value");
+          }
+        };
+
+        Blockly.JavaScript['touch_sensor'] = function(block) {
+          return ['digitalRead(3)', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['color_sensor'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("color sensor");
+            this.setOutput(true, "String");
+            this.setColour(120);
+            this.setTooltip("Read color sensor value");
+          }
+        };
+
+        Blockly.JavaScript['color_sensor'] = function(block) {
+          return ['readColor()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        // Joystick blocks
+        Blockly.Blocks['joystick1'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("joystick X");
+            this.setOutput(true, "Number");
+            this.setColour(290);
+            this.setTooltip("Read joystick X value");
+          }
+        };
+
+        Blockly.JavaScript['joystick1'] = function(block) {
+          return ['analogRead(A1)', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        Blockly.Blocks['joystick2'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("joystick Y");
+            this.setOutput(true, "Number");
+            this.setColour(290);
+            this.setTooltip("Read joystick Y value");
+          }
+        };
+
+        Blockly.JavaScript['joystick2'] = function(block) {
+          return ['analogRead(A2)', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+        };
+
+        // Define custom variable blocks to match the interface
+        Blockly.Blocks['variables_declare'] = {
+          init: function() {
+            this.appendDummyInput()
+                .appendField("Declare")
+                .appendField(new Blockly.FieldVariable("i_count"), "VAR");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(290);
+            this.setTooltip("Declare a variable");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['variables_declare'] = function(block) {
+          var variable = Blockly.JavaScript.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Variables.NAME_TYPE);
+          return 'var ' + variable + ';\n';
+        };
+
+        Blockly.Blocks['variables_define'] = {
+          init: function() {
+            this.appendValueInput("VALUE")
+                .setCheck(null)
+                .appendField("Define")
+                .appendField(new Blockly.FieldVariable("i_count"), "VAR")
+                .appendField("to");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(290);
+            this.setTooltip("Define a variable with initial value");
+            this.setHelpUrl("");
+          }
+        };
+
+        Blockly.JavaScript['variables_define'] = function(block) {
+          var variable = Blockly.JavaScript.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Variables.NAME_TYPE);
+          var value = Blockly.JavaScript.valueToCode(block, 'VALUE', Blockly.JavaScript.ORDER_ASSIGNMENT) || '0';
+          return 'var ' + variable + ' = ' + value + ';\n';
+        };
+        Blockly.Blocks['oled_show'] = {
+          init: function() {
+            this.appendValueInput("TEXT")
+                .setCheck("String")
+                .appendField("OLED display");
+            this.setPreviousStatement(true, null);
+            this.setNextStatement(true, null);
+            this.setColour(330);
+            this.setTooltip("Display text on OLED screen");
+          }
+        };
+
+        Blockly.JavaScript['oled_show'] = function(block) {
+          var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC);
+          return `oledDisplay(${text});\n`;
+        };
+      }
+
+      // Initialize custom blocks
+      defineCustomBlocks();
 
       fetch('navbar.html')
         .then(res => res.text())
@@ -294,6 +716,14 @@
         toolbox: document.getElementById('toolbox'),
         trashcan: true,
         scrollbars: true
+      });
+
+      // Create default variable
+      workspace.createVariable('i_count');
+
+      // Handle variable creation callback
+      workspace.registerButtonCallback('CREATE_VARIABLE', function(button) {
+        Blockly.Variables.createVariableButtonHandler(button.getTargetWorkspace());
       });
 
       window.addEventListener('resize', () => Blockly.svgResize(workspace));
@@ -364,6 +794,47 @@ ${indent(raw)}
         setCurrentLanguage('c');
       }
 
+      function setCurrentLanguage(lang) {
+        // This function is called but not implemented in original code
+        // Adding empty implementation to prevent errors
+      }
+
+      function saveCode() {
+        const xml = Blockly.Xml.workspaceToDom(workspace);
+        const xmlText = Blockly.Xml.domToText(xml);
+        const blob = new Blob([xmlText], { type: 'text/xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'blockly_program.xml';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function loadCode() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xml';
+        input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              try {
+                const xmlText = e.target.result;
+                const xml = Blockly.Xml.textToDom(xmlText);
+                workspace.clear();
+                Blockly.Xml.domToWorkspace(xml, workspace);
+              } catch (error) {
+                alert('Error loading file: ' + error.message);
+              }
+            };
+            reader.readAsText(file);
+          }
+        };
+        input.click();
+      }
+
       // Terminal functions
       function toggleTerminal() {
         const terminalPanel = document.getElementById('terminal-panel');
@@ -393,6 +864,8 @@ ${indent(raw)}
       // Make functions globally available
       window.toggleTerminal = toggleTerminal;
       window.clearTerminal = clearTerminal;
+      window.saveCode = saveCode;
+      window.loadCode = loadCode;
 
       // Terminal resize functionality
       function setupTerminalResize() {
