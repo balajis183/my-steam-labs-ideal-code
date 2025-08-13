@@ -739,7 +739,7 @@
         if (iframe && iframe.contentWindow) {
           const code = iframe.contentWindow.getEditorValue();
           navigator.clipboard.writeText(code).then(() => {
-            alert('Code copied to clipboard!');
+            // alert('Code copied to clipboard!');
             // Restore focus to editor after copy
             setTimeout(() => {
               if (iframe.contentWindow.editor) {

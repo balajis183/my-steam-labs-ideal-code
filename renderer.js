@@ -574,10 +574,10 @@ async function saveCode() {
     const code = getCurrentCode();
     const language = getCurrentLanguage();
     
-    if (!code || code.trim() === '') {
-      alert('No code to save. Please generate some code first.');
-      return;
-    }
+    // if (!code || code.trim() === '') {
+    //   alert('No code to save. Please generate some code first.');
+    //   return;
+    // }
     
     const result = await window.electronAPI.saveCode(code, language);
     
