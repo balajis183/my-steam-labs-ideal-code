@@ -735,13 +735,18 @@
       }
 
       function copyCode() {
-        const editorWindow = document.getElementById('monacoEditor').contentWindow;
-        if (editorWindow && editorWindow.getEditorValue) {
-          const code = editorWindow.getEditorValue();
+        const iframe = document.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+          const code = iframe.contentWindow.getEditorValue();
           navigator.clipboard.writeText(code).then(() => {
-            alert('Code copied to clipboard!');
-          }).catch(() => {
-            alert('Failed to copy code. Please select and copy manually.');
+            // Restore focus to editor after copy
+            setTimeout(() => {
+              if (iframe.contentWindow.editor) {
+                iframe.contentWindow.editor.focus();
+              }
+            }, 100);
+          }).catch(err => {
+            console.error('Failed to copy:', err);
           });
         }
       }

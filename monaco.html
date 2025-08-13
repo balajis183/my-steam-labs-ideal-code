@@ -39,15 +39,17 @@
         value: '',
         language: 'javascript',
         theme: 'vs-dark',
-        automaticLayout: true,
         
         // Editing improvements
-        readOnly: false,  // Ensure not read-only
-        selectOnLineNumbers: true,
-        roundedSelection: false,
+        readOnly: false,
+        autoClosingBrackets: 'always',
+        autoClosingQuotes: 'always',
+        automaticLayout: true,
+        contextmenu: true,
+        lineNumbers: 'on',
+        quickSuggestions: true,
         scrollBeyondLastLine: false,
-        minimap: { enabled: false },
-        wordWrap: 'on',
+        tabCompletion: 'on',
         
         // Cursor and selection improvements
         cursorBlinking: 'blink',
@@ -56,7 +58,6 @@
         
         // Performance improvements
         renderLineHighlight: 'all',
-        contextmenu: true,
         mouseWheelZoom: true,
         
         // Font improvements
@@ -65,7 +66,12 @@
         lineHeight: 20,
         
         // Placeholder configuration
-        placeholder: '// Start coding here...'
+        placeholder: '// Start coding here...',
+
+        // Focus handling improvements
+        renderValidationDecorations: 'on',
+        fixedOverflowWidgets: true,
+        preserveFocus: false
       });
 
       // Ensure editor is focused and ready
@@ -183,6 +189,12 @@
           window.checkEditorState();
         }, 5000);
       }
+
+      // Handle editor focus and blur events
+      window.editor.onDidBlurEditorWidget(() => {
+        // Ensure editor stays interactive even when temporarily losing focus
+        window.editor.updateOptions({ readOnly: false });
+      });
     });
 
     // Handle potential loading errors
