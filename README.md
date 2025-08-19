@@ -1,6 +1,6 @@
 # MY STEAM LAB - Blockly Code Generator
 
-A comprehensive code generation and hardware interaction tool with multi-language support for JavaScript, Python, C++, and C.
+A code-generation workspace powered by Blockly with multi-language output (JavaScript, Python, C++, C) and optional hardware adapters.
 
 ## Features
 
@@ -162,18 +162,37 @@ npm start
 
 #ideal code till save code and load code 
 
-## File Structure
+## Repository Layout (What lives where)
 
 ```
-├── main.js              # Main Electron process
-├── renderer.js          # Renderer process with UI logic
-├── preload.js           # IPC bridge for main-renderer communication
-├── index.html           # Main application interface
-├── navbar.html          # Navigation bar with hardware controls
-├── monaco.html          # Monaco editor configuration
-├── status.py            # Board connection status checker
-├── test_hardware.js     # Hardware connectivity test
-└── package.json         # Dependencies and scripts
+my-steam-labs-ideal-code/
+├─ blockly/
+│  ├─ blocks/                 # Block shape/fields (no language semantics)
+│  │  └─ index.js
+│  └─ generators/            # Per-language code emission for blocks
+│     ├─ javascript/index.js  # JS generators (+ forBlock proxies)
+│     ├─ python/index.js      # Python generators (+ forBlock proxies)
+│     ├─ cpp/index.js         # C++ generators (+ forBlock proxies)
+│     └─ c/index.js           # C generators (+ forBlock proxies)
+│
+├─ ui/
+│  ├─ pages/index.html        # App shell, toolbox categories and buttons
+│  ├─ pages/monaco.html       # Embedded Monaco editor
+│  ├─ scripts/blockly_page.js # Injects Blockly, handles Generate buttons
+│  ├─ scripts/renderer.js     # Terminal, compile/upload/run wiring
+│  └─ styles/*.css            # Styling
+│
+├─ hardware/                  # Optional board/IO adapters used at runtime
+│  ├─ pin_io.js
+│  ├─ sensors.js
+│  ├─ motor_control.js
+│  └─ oled_display.js
+│
+├─ app/                       # App host integration (if used)
+├─ tests/                     # Workspace/codegen tests (optional)
+├─ code_export.js             # Save/export helpers
+├─ status.py                  # Connection status utility
+└─ README.md
 ```
 
 ## API Reference
@@ -273,13 +292,85 @@ All errors are displayed in the terminal with clear error messages and suggestio
 
 ## Development
 
+### Adding a New Block (step‑by‑step)
+
+1) Define the block UI in `blockly/blocks/index.js`
+
+```js
+// Example: simple digital write block
+{
+  "type": "set_pin",
+  "message0": "set pin %1 to %2",
+  "args0": [
+    { "type": "input_value", "name": "PIN", "check": "Number" },
+    { "type": "input_value", "name": "VALUE", "check": ["Boolean","Number"] }
+  ],
+  "previousStatement": null,
+  "nextStatement": null,
+  "colour": 230
+}
+```
+
+2) Implement generators per language in:
+   - `blockly/generators/javascript/index.js`
+   - `blockly/generators/python/index.js`
+   - `blockly/generators/cpp/index.js`
+   - `blockly/generators/c/index.js`
+
+Minimal JS example:
+```js
+Blockly.JavaScript['set_pin'] = function(block){
+  const pin = Blockly.JavaScript.valueToCode(block,'PIN',Blockly.JavaScript.ORDER_ATOMIC)||'0';
+  const value = Blockly.JavaScript.valueToCode(block,'VALUE',Blockly.JavaScript.ORDER_ATOMIC)||'0';
+  return `setPin(${pin}, ${value});\n`;
+};
+```
+
+3) Ensure forBlock proxies exist
+
+If Blockly uses the new `forBlock` API, our generator files already auto‑proxy to classic handlers. If you want explicit `forBlock` logic, add:
+```js
+Blockly.JavaScript.forBlock['set_pin'] = (block, gen) => Blockly.JavaScript['set_pin'](block);
+```
+
+4) Add the block to the toolbox
+
+In `ui/pages/index.html`, find the `<xml id="toolbox">` and add:
+```html
+<category name="Pin I/O" colour="230">
+  <block type="set_pin"></block>
+  ...
+</category>
+```
+
+5) Test generation
+
+- Open the app, drop the block, click Generate per language
+- If a language is missing a handler, the console will show it
+
+6) Wire to real hardware (optional)
+
+- Keep stable API shims in `hardware/*.js` (e.g., `setPin`, `setMotor`)
+- Map those shims to libraries/boards used by clients
+
+### Adding a New Category
+- Update the toolbox in `ui/pages/index.html`
+- Add block definitions in `blockly/blocks/index.js`
+- Implement per-language generators in `blockly/generators/*/index.js`
+- If needed, extend `hardware/*` adapters
+
 ### Adding New Languages
-1. Add compile function in `main.js`
-2. Add upload function in `main.js`
-3. Add run function in `main.js`
-4. Update `preload.js` with new API functions
-5. Update `renderer.js` with language support
-6. Add language option in UI
+1. Add compile/upload/run paths in your app host (if applicable)
+2. Create `blockly/generators/<lang>/index.js` with a `Blockly.<Lang>` generator
+3. Provide `forBlock` or classic handlers for all blocks
+4. Update UI buttons to call `<Lang>.workspaceToCode(workspace)`
+5. Add syntax/compile validation for the language
+
+### Production Tips
+- Prefer native per‑language generators over fallbacks
+- Enforce a stable API surface (e.g., `setPin`, `oledDisplay`)
+- Add snapshot tests: generate code from sample workspaces and compare
+- Optionally run compilers/linters on generated code in CI
 
 ### Terminal Integration
 The terminal system uses IPC communication to display real-time output from main process operations. All compile, upload, and run operations send output to the terminal for user feedback.

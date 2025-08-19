@@ -244,47 +244,7 @@ function showOnOLED(text, x, y, color) {
   }
 }
 
-// JavaScript code generation for Blockly blocks (consistent with inputs)
-Blockly.JavaScript['set_pin'] = function(block) {
-  var pin = Blockly.JavaScript.valueToCode(block, 'PIN', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  var value = Blockly.JavaScript.valueToCode(block, 'VALUE', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  return 'setPin(' + pin + ', ' + value + ');\n';
-};
-
-Blockly.JavaScript['read_pin'] = function(block) {
-  var pin = Blockly.JavaScript.valueToCode(block, 'PIN', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  return ['readPin(' + pin + ')', Blockly.JavaScript.ORDER_FUNCTION_CALL];
-};
-
-Blockly.JavaScript['dc_motor'] = function(block) {
-  var motor = block.getFieldValue('MOTOR');
-  var speed = Blockly.JavaScript.valueToCode(block, 'SPEED', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  var direction = block.getFieldValue('DIRECTION');
-  return 'setMotor("' + motor + '", ' + speed + ', "' + direction + '");\n';
-};
-
-Blockly.JavaScript['servo_motor'] = function(block) {
-  var servo = block.getFieldValue('SERVO');
-  var angle = Blockly.JavaScript.valueToCode(block, 'ANGLE', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  return 'setServo(' + servo + ', ' + angle + ');\n';
-};
-
-Blockly.JavaScript['ldr_sensor'] = function() { return ['readLDR()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['ir_sensor'] = function() { return ['readIR()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['temp_sensor'] = function() { return ['readTemperature()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['ultrasonic_sensor'] = function() { return ['readUltrasonic()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['touch_sensor'] = function() { return ['readTouch()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['color_sensor'] = function() { return ['readColor()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['joystick1'] = function() { return ['readJoystick1()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-Blockly.JavaScript['joystick2'] = function() { return ['readJoystick2()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
-
-Blockly.JavaScript['oled_display_colored'] = function(block) {
-  const text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
-  const x = Blockly.JavaScript.valueToCode(block, 'X', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  const y = Blockly.JavaScript.valueToCode(block, 'Y', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  const color = Blockly.JavaScript.valueToCode(block, 'COLOR', Blockly.JavaScript.ORDER_ATOMIC) || '"white"';
-  return `showOnOLED(${text}, ${x}, ${y}, ${color});\n`;
-};
+// JavaScript generators are now defined in separate files
 
 // Extra blocks used by toolbox
 Blockly.Blocks['time_delay'] = {
@@ -296,10 +256,7 @@ Blockly.Blocks['time_delay'] = {
     this.setColour(195);
   }
 };
-Blockly.JavaScript['time_delay'] = function(block) {
-  var value = Blockly.JavaScript.valueToCode(block, 'TIME', Blockly.JavaScript.ORDER_ATOMIC) || '0';
-  return 'delay(' + value + ');\n';
-};
+// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_if'] = {
   init: function() {
@@ -310,11 +267,7 @@ Blockly.Blocks['enhanced_if'] = {
     this.setColour(210);
   }
 };
-Blockly.JavaScript['enhanced_if'] = function(block) {
-  const cond = Blockly.JavaScript.valueToCode(block, 'IF0', Blockly.JavaScript.ORDER_NONE) || 'false';
-  const body = Blockly.JavaScript.statementToCode(block, 'DO0');
-  return 'if (' + cond + ') {\n' + body + '}\n';
-};
+// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_compare'] = {
   init: function() {
@@ -326,14 +279,7 @@ Blockly.Blocks['enhanced_compare'] = {
     this.setColour(210);
   }
 };
-Blockly.JavaScript['enhanced_compare'] = function(block) {
-  var OPERATORS = { 'EQ': '==', 'NEQ': '!=', 'LT': '<', 'LTE': '<=', 'GT': '>', 'GTE': '>=' };
-  var operator = OPERATORS[block.getFieldValue('OP')];
-  var order = (operator == '==' || operator == '!=') ? Blockly.JavaScript.ORDER_EQUALITY : Blockly.JavaScript.ORDER_RELATIONAL;
-  var a = Blockly.JavaScript.valueToCode(block, 'A', order) || '0';
-  var b = Blockly.JavaScript.valueToCode(block, 'B', order) || '0';
-  return [a + ' ' + operator + ' ' + b, order];
-};
+// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_logic'] = {
   init: function() {
@@ -345,13 +291,7 @@ Blockly.Blocks['enhanced_logic'] = {
     this.setColour(210);
   }
 };
-Blockly.JavaScript['enhanced_logic'] = function(block) {
-  var operator = (block.getFieldValue('OP') == 'AND') ? '&&' : '||';
-  var order = (operator == '&&') ? Blockly.JavaScript.ORDER_LOGICAL_AND : Blockly.JavaScript.ORDER_LOGICAL_OR;
-  var a = Blockly.JavaScript.valueToCode(block, 'A', order) || (operator == '&&' ? 'true' : 'false');
-  var b = Blockly.JavaScript.valueToCode(block, 'B', order) || (operator == '&&' ? 'true' : 'false');
-  return [a + ' ' + operator + ' ' + b, order];
-};
+// JavaScript generator moved to separate file
 
 // Simple OLED show block used by toolbox
 Blockly.Blocks['oled_show'] = {
@@ -362,34 +302,10 @@ Blockly.Blocks['oled_show'] = {
     this.setColour(330);
   }
 };
-Blockly.JavaScript['oled_show'] = function(block) {
-  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
-  return 'oledDisplay(' + text + ');\n';
-};
+// JavaScript generator moved to separate file
 
 
-// Guarded mappings for other languages (if present)
-if (Blockly.Python) {
-  Blockly.Python['set_pin'] = function(block){ return Blockly.JavaScript['set_pin'](block); };
-  Blockly.Python['read_pin'] = function(block){ return Blockly.JavaScript['read_pin'](block); };
-  Blockly.Python['dc_motor'] = function(block){ return Blockly.JavaScript['dc_motor'](block); };
-  Blockly.Python['servo_motor'] = function(block){ return Blockly.JavaScript['servo_motor'](block); };
-  Blockly.Python['oled_display_colored'] = function(block){ return Blockly.JavaScript['oled_display_colored'](block); };
-}
-if (Blockly.Cpp) {
-  Blockly.Cpp['set_pin'] = function(block){ return Blockly.JavaScript['set_pin'](block); };
-  Blockly.Cpp['read_pin'] = function(block){ return Blockly.JavaScript['read_pin'](block); };
-  Blockly.Cpp['dc_motor'] = function(block){ return Blockly.JavaScript['dc_motor'](block); };
-  Blockly.Cpp['servo_motor'] = function(block){ return Blockly.JavaScript['servo_motor'](block); };
-  Blockly.Cpp['oled_display_colored'] = function(block){ return Blockly.JavaScript['oled_display_colored'](block); };
-}
-if (Blockly.C) {
-  Blockly.C['set_pin'] = function(block){ return Blockly.JavaScript['set_pin'](block); };
-  Blockly.C['read_pin'] = function(block){ return Blockly.JavaScript['read_pin'](block); };
-  Blockly.C['dc_motor'] = function(block){ return Blockly.JavaScript['dc_motor'](block); };
-  Blockly.C['servo_motor'] = function(block){ return Blockly.JavaScript['servo_motor'](block); };
-  Blockly.C['oled_display_colored'] = function(block){ return Blockly.JavaScript['oled_display_colored'](block); };
-}
+// Language-specific generators are now defined in separate files
 
 // -----------------------------
 // Extra blocks needed by toolbox
@@ -405,10 +321,7 @@ if (!Blockly.Blocks['my_program']) {
       this.setTooltip('Main program block');
     }
   };
-  Blockly.JavaScript['my_program'] = function(block) {
-    const body = Blockly.JavaScript.statementToCode(block, 'PROGRAM');
-    return '// My Program\n' + body;
-  };
+  // JavaScript generator moved to separate file
 }
 
 // Simple variables helpers (in addition to built-ins)
@@ -422,10 +335,7 @@ if (!Blockly.Blocks['variables_declare']) {
       this.setTooltip('Declare a variable');
     }
   };
-  Blockly.JavaScript['variables_declare'] = function(block) {
-    const v = Blockly.JavaScript.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Variables.NAME_TYPE);
-    return 'var ' + v + ';\n';
-  };
+  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['variables_define']) {
@@ -438,11 +348,7 @@ if (!Blockly.Blocks['variables_define']) {
       this.setTooltip('Define a variable with initial value');
     }
   };
-  Blockly.JavaScript['variables_define'] = function(block) {
-    const v = Blockly.JavaScript.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Variables.NAME_TYPE);
-    const val = Blockly.JavaScript.valueToCode(block, 'VALUE', Blockly.JavaScript.ORDER_ASSIGNMENT) || '0';
-    return 'var ' + v + ' = ' + val + ';\n';
-  };
+  // JavaScript generator moved to separate file
 }
 
 // Bluetooth blocks
@@ -456,10 +362,7 @@ if (!Blockly.Blocks['bluetooth_setup']) {
       this.setColour(290);
     }
   };
-  Blockly.JavaScript['bluetooth_setup'] = function(block) {
-    var deviceName = block.getFieldValue('DEVICE_NAME');
-    return `btSerial.begin("${deviceName}");\n`;
-  };
+  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_send']) {
@@ -471,20 +374,17 @@ if (!Blockly.Blocks['bluetooth_send']) {
       this.setColour(290);
     }
   };
-  Blockly.JavaScript['bluetooth_send'] = function(block) {
-    var data = Blockly.JavaScript.valueToCode(block, 'DATA', Blockly.JavaScript.ORDER_ATOMIC) || '""';
-    return `btSerial.print(${data});\n`;
-  };
+  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_available']) {
   Blockly.Blocks['bluetooth_available'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth data available?'); this.setOutput(true,'Boolean'); this.setColour(290);} };
-  Blockly.JavaScript['bluetooth_available'] = function(){ return ['btSerial.available() > 0', Blockly.JavaScript.ORDER_ATOMIC]; };
+  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_read']) {
   Blockly.Blocks['bluetooth_read'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth read string'); this.setOutput(true,'String'); this.setColour(290);} };
-  Blockly.JavaScript['bluetooth_read'] = function(){ return ['btSerial.readString()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; };
+  // JavaScript generator moved to separate file
 }
 
 
