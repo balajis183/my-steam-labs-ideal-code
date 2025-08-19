@@ -26,7 +26,7 @@ function createWindow() {
   });
   
   // Load the loading screen first
-  mainWindow.loadFile('loading.html');
+  mainWindow.loadFile(path.join(__dirname, '..', 'ui', 'pages', 'loading.html'));
   
   // Listen for navigation to main app
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
@@ -388,7 +388,7 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
 // ---- Board Status Check ----
 ipcMain.handle('check-board', async () => {
   return new Promise((resolve, reject) => {
-    const python = spawn('python', ['status.py']);
+    const python = spawn('python', [path.join(__dirname, '..', 'status.py')]);
     let output = '';
 
     python.stdout.on('data', data => {

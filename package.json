@@ -1,7 +1,7 @@
 {
   "name": "gloom-scratch-app",
   "version": "1.0.0",
-  "main": "main.js",
+  "main": "app/main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder"
