@@ -85,6 +85,95 @@ Blockly.Cpp['oled_display_colored'] = function(block) {
   return `showOnOLED(${text}, ${x}, ${y}, ${color});\n`;
 };
 
+// ========================================
+// NEW C++ GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.Cpp['pin_mode'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `pinMode(${pin}, ${mode});\n`;
+};
+
+// Analog read
+Blockly.Cpp['analog_read'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  return [`analogRead(${pin})`, Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// Analog write (PWM)
+Blockly.Cpp['analog_write'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `analogWrite(${pin}, ${value});\n`;
+};
+
+// Motor speed control
+Blockly.Cpp['motor_speed'] = function(block) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `setMotorSpeed("${motor}", ${speed});\n`;
+};
+
+// IR sensor analog read
+Blockly.Cpp['ir_sensor_analog'] = function() {
+  return ['analogRead(A1)', Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// WiFi connect
+Blockly.Cpp['wifi_connect'] = function(block) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `WiFi.begin("${ssid}", "${password}");\n`;
+};
+
+// WiFi send
+Blockly.Cpp['wifi_send'] = function(block) {
+  var data = Blockly.Cpp.valueToCode(block, 'DATA', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifiSend(${data}, "${ip}", ${port});\n`;
+};
+
+// WiFi receive
+Blockly.Cpp['wifi_receive'] = function(block) {
+  var port = block.getFieldValue('PORT');
+  return [`wifiReceive(${port})`, Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// Enhanced OLED display variable
+Blockly.Cpp['oled_display_variable'] = function(block) {
+  var variable = Blockly.Cpp.valueToCode(block, 'VARIABLE', Blockly.Cpp.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayVariableOnOLED(${variable}, ${x}, ${y});\n`;
+};
+
+// Enhanced OLED display character
+Blockly.Cpp['oled_display_char'] = function(block) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayCharOnOLED("${char}", ${x}, ${y});\n`;
+};
+
+// Enhanced OLED animation blink
+Blockly.Cpp['oled_animation_blink'] = function(block) {
+  var text = Blockly.Cpp.valueToCode(block, 'TEXT', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blinkTextOnOLED(${text}, ${times}, ${delay});\n`;
+};
+
+// Enhanced OLED animation scroll
+Blockly.Cpp['oled_animation_scroll'] = function(block) {
+  var text = Blockly.Cpp.valueToCode(block, 'TEXT', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scrollTextOnOLED(${text}, "${direction}", ${speed});\n`;
+};
+
 Blockly.Cpp['time_delay'] = function(block) {
   var value = Blockly.Cpp.valueToCode(block, 'TIME', Blockly.Cpp.ORDER_ATOMIC) || '0';
   return 'delay(' + value + ');\n';
@@ -172,6 +261,95 @@ Blockly.Cpp['text'] = function(block) {
 Blockly.Cpp['text_print'] = function(block) {
   const text = Blockly.Cpp.valueToCode(block, 'TEXT', Blockly.Cpp.ORDER_NONE) || '""';
   return 'Serial.println(' + text + ');\n';
+};
+
+// ========================================
+// NEW C++ FORBLOCK GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.Cpp.forBlock['pin_mode'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `pinMode(${pin}, ${mode});\n`;
+};
+
+// Analog read
+Blockly.Cpp.forBlock['analog_read'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  return [`analogRead(${pin})`, Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// Analog write (PWM)
+Blockly.Cpp.forBlock['analog_write'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `analogWrite(${pin}, ${value});\n`;
+};
+
+// Motor speed control
+Blockly.Cpp.forBlock['motor_speed'] = function(block, generator) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `setMotorSpeed("${motor}", ${speed});\n`;
+};
+
+// IR sensor analog read
+Blockly.Cpp.forBlock['ir_sensor_analog'] = function(block, generator) {
+  return ['analogRead(A1)', Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// WiFi connect
+Blockly.Cpp.forBlock['wifi_connect'] = function(block, generator) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `WiFi.begin("${ssid}", "${password}");\n`;
+};
+
+// WiFi send
+Blockly.Cpp.forBlock['wifi_send'] = function(block, generator) {
+  var data = Blockly.Cpp.valueToCode(block, 'DATA', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifiSend(${data}, "${ip}", ${port});\n`;
+};
+
+// WiFi receive
+Blockly.Cpp.forBlock['wifi_receive'] = function(block, generator) {
+  var port = block.getFieldValue('PORT');
+  return [`wifiReceive(${port})`, Blockly.Cpp.ORDER_FUNCTION_CALL];
+};
+
+// Enhanced OLED display variable
+Blockly.Cpp.forBlock['oled_display_variable'] = function(block, generator) {
+  var variable = Blockly.Cpp.valueToCode(block, 'VARIABLE', Blockly.Cpp.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayVariableOnOLED(${variable}, ${x}, ${y});\n`;
+};
+
+// Enhanced OLED display character
+Blockly.Cpp.forBlock['oled_display_char'] = function(block, generator) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayCharOnOLED("${char}", ${x}, ${y});\n`;
+};
+
+// Enhanced OLED animation blink
+Blockly.Cpp.forBlock['oled_animation_blink'] = function(block, generator) {
+  var text = Blockly.Cpp.valueToCode(block, 'TEXT', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blinkTextOnOLED(${text}, ${times}, ${delay});\n`;
+};
+
+// Enhanced OLED animation scroll
+Blockly.Cpp.forBlock['oled_animation_scroll'] = function(block, generator) {
+  var text = Blockly.Cpp.valueToCode(block, 'TEXT', Blockly.Cpp.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scrollTextOnOLED(${text}, "${direction}", ${speed});\n`;
 };
 
 // Ensure forBlock proxies for C++ as well

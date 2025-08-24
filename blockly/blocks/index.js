@@ -244,6 +244,82 @@ function showOnOLED(text, x, y, color) {
   }
 }
 
+// ========================================
+// NEW HARDWARE FUNCTIONS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+function setPinMode(pin, mode) {
+  console.log(`Setting pin ${pin} mode to ${mode}`);
+  // This would interface with actual hardware
+}
+
+// Analog read function
+function readAnalogPin(pin) {
+  console.log(`Reading analog value from pin ${pin}`);
+  return Math.floor(Math.random() * 1024); // Mock analog read (0-1023)
+}
+
+// Analog write function (PWM)
+function writeAnalogPin(pin, value) {
+  console.log(`Writing analog value ${value} to pin ${pin} (PWM)`);
+  // This would interface with actual hardware PWM
+}
+
+// Motor speed control
+function setMotorSpeed(motor, speed) {
+  console.log(`Setting motor ${motor} speed to ${speed}`);
+  // This would interface with actual motor driver
+}
+
+// IR sensor analog read
+function readIRAnalog() {
+  console.log(`Reading IR sensor analog value`);
+  return Math.floor(Math.random() * 1024); // Mock IR analog read
+}
+
+// WiFi functions
+function wifiConnect(ssid, password) {
+  console.log(`Connecting to WiFi: ${ssid}`);
+  // This would interface with ESP32/ESP8266 WiFi
+  return true; // Mock connection success
+}
+
+function wifiSend(data, ip, port) {
+  console.log(`Sending data over WiFi to ${ip}:${port}: ${data}`);
+  // This would send data over WiFi network
+}
+
+function wifiReceive(port) {
+  console.log(`Receiving data on WiFi port ${port}`);
+  return "Mock WiFi data"; // Mock received data
+}
+
+// Enhanced OLED functions
+function displayVariableOnOLED(variable, x, y) {
+  console.log(`Displaying variable ${variable} on OLED at (${x}, ${y})`);
+  if (typeof window.writeOLED === 'function') {
+    window.writeOLED(0, String(variable));
+  }
+}
+
+function displayCharOnOLED(char, x, y) {
+  console.log(`Displaying character ${char} on OLED at (${x}, ${y})`);
+  if (typeof window.writeOLED === 'function') {
+    window.writeOLED(0, char);
+  }
+}
+
+function blinkTextOnOLED(text, times, delay) {
+  console.log(`Blinking text "${text}" ${times} times with ${delay}ms delay`);
+  // This would create blinking animation on OLED
+}
+
+function scrollTextOnOLED(text, direction, speed) {
+  console.log(`Scrolling text "${text}" ${direction} with speed ${speed}`);
+  // This would create scrolling animation on OLED
+}
+
 // JavaScript generators are now defined in separate files
 
 // Extra blocks used by toolbox
@@ -305,7 +381,6 @@ Blockly.Blocks['oled_show'] = {
 // JavaScript generator moved to separate file
 
 
-// Language-specific generators are now defined in separate files
 
 // -----------------------------
 // Extra blocks needed by toolbox
@@ -321,7 +396,6 @@ if (!Blockly.Blocks['my_program']) {
       this.setTooltip('Main program block');
     }
   };
-  // JavaScript generator moved to separate file
 }
 
 // Simple variables helpers (in addition to built-ins)
@@ -335,7 +409,6 @@ if (!Blockly.Blocks['variables_declare']) {
       this.setTooltip('Declare a variable');
     }
   };
-  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['variables_define']) {
@@ -348,7 +421,6 @@ if (!Blockly.Blocks['variables_define']) {
       this.setTooltip('Define a variable with initial value');
     }
   };
-  // JavaScript generator moved to separate file
 }
 
 // Bluetooth blocks
@@ -362,7 +434,6 @@ if (!Blockly.Blocks['bluetooth_setup']) {
       this.setColour(290);
     }
   };
-  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_send']) {
@@ -374,7 +445,6 @@ if (!Blockly.Blocks['bluetooth_send']) {
       this.setColour(290);
     }
   };
-  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_available']) {
@@ -384,7 +454,206 @@ if (!Blockly.Blocks['bluetooth_available']) {
 
 if (!Blockly.Blocks['bluetooth_read']) {
   Blockly.Blocks['bluetooth_read'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth read string'); this.setOutput(true,'String'); this.setColour(290);} };
-  // JavaScript generator moved to separate file
+}
+
+// ========================================
+// NEW MISSING BLOCKS ACCORDING TO DOCUMENT
+// ========================================
+
+// 1. PIN MODE CONFIGURATION
+if (!Blockly.Blocks['pin_mode']) {
+  Blockly.Blocks['pin_mode'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Set pin')
+        .appendField(new Blockly.FieldNumber(13, 0, 54), 'PIN')
+        .appendField('as')
+        .appendField(new Blockly.FieldDropdown([
+          ["INPUT", "INPUT"],
+          ["OUTPUT", "OUTPUT"],
+          ["INPUT_PULLUP", "INPUT_PULLUP"]
+        ]), 'MODE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(230);
+      this.setTooltip('Set pin mode (INPUT, OUTPUT, INPUT_PULLUP)');
+    }
+  };
+}
+
+// 2. ANALOG READ BLOCK
+if (!Blockly.Blocks['analog_read']) {
+  Blockly.Blocks['analog_read'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Read analog pin')
+        .appendField(new Blockly.FieldNumber(0, 0, 16), 'PIN');
+      this.setOutput(true, 'Number');
+      this.setColour(230);
+      this.setTooltip('Read analog value from pin (0-1023 for Arduino, 0-4095 for ESP32)');
+    }
+  };
+}
+
+// 3. ANALOG WRITE BLOCK (PWM)
+if (!Blockly.Blocks['analog_write']) {
+  Blockly.Blocks['analog_write'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Write analog pin')
+        .appendField(new Blockly.FieldNumber(9, 0, 54), 'PIN')
+        .appendField('value')
+        .appendField(new Blockly.FieldNumber(128, 0, 255), 'VALUE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(230);
+      this.setTooltip('Write PWM value to pin (0-255)');
+    }
+  };
+}
+
+// 4. MOTOR SPEED CONTROL
+if (!Blockly.Blocks['motor_speed']) {
+  Blockly.Blocks['motor_speed'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Set motor')
+        .appendField(new Blockly.FieldDropdown([
+          ["M1", "M1"],
+          ["M2", "M2"],
+          ["M3", "M3"],
+          ["M4", "M4"]
+        ]), 'MOTOR')
+        .appendField('speed to')
+        .appendField(new Blockly.FieldNumber(100, 0, 255), 'SPEED');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(20);
+      this.setTooltip('Set motor speed (0-255)');
+    }
+  };
+}
+
+// 5. IR SENSOR ANALOG READ
+if (!Blockly.Blocks['ir_sensor_analog']) {
+  Blockly.Blocks['ir_sensor_analog'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Read IR sensor analog value');
+      this.setOutput(true, 'Number');
+      this.setColour(120);
+      this.setTooltip('Read analog value from IR sensor');
+    }
+  };
+}
+
+// 6. WIFI COMMUNICATION BLOCKS
+if (!Blockly.Blocks['wifi_connect']) {
+  Blockly.Blocks['wifi_connect'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi connect to SSID:')
+        .appendField(new Blockly.FieldTextInput('MyWiFi'), 'SSID')
+        .appendField('Password:')
+        .appendField(new Blockly.FieldTextInput('password'), 'PASSWORD');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Connect to WiFi network');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_send']) {
+  Blockly.Blocks['wifi_send'] = {
+    init: function() {
+      this.appendValueInput('DATA').setCheck(['String','Number']).appendField('WiFi send to')
+        .appendField(new Blockly.FieldTextInput('192.168.1.100'), 'IP')
+        .appendField('port')
+        .appendField(new Blockly.FieldNumber(80, 1, 65535), 'PORT');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Send data over WiFi');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_receive']) {
+  Blockly.Blocks['wifi_receive'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi receive on port')
+        .appendField(new Blockly.FieldNumber(80, 1, 65535), 'PORT');
+      this.setOutput(true, 'String');
+      this.setColour(290);
+      this.setTooltip('Receive data over WiFi');
+    }
+  };
+}
+
+// 7. ENHANCED OLED DISPLAY BLOCKS
+if (!Blockly.Blocks['oled_display_variable']) {
+  Blockly.Blocks['oled_display_variable'] = {
+    init: function() {
+      this.appendValueInput('VARIABLE').setCheck(null).appendField('OLED display variable')
+        .appendField('at x')
+        .appendField(new Blockly.FieldNumber(0, 0, 128), 'X')
+        .appendField('y')
+        .appendField(new Blockly.FieldNumber(0, 0, 64), 'Y');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip('Display variable value on OLED');
+    }
+  };
+}
+
+if (!Blockly.Blocks['oled_display_char']) {
+  Blockly.Blocks['oled_display_char'] = {
+    init: function() {
+      this.appendDummyInput().appendField('OLED display character')
+        .appendField(new Blockly.FieldTextInput('A'), 'CHAR')
+        .appendField('at x')
+        .appendField(new Blockly.FieldNumber(0, 0, 128), 'X')
+        .appendField('y')
+        .appendField(new Blockly.FieldNumber(0, 0, 64), 'Y');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip('Display single character on OLED');
+    }
+  };
+}
+
+if (!Blockly.Blocks['oled_animation_blink']) {
+  Blockly.Blocks['oled_animation_blink'] = {
+    init: function() {
+      this.appendValueInput('TEXT').setCheck('String').appendField('OLED blink text')
+        .appendField('times')
+        .appendField(new Blockly.FieldNumber(3, 1, 10), 'TIMES')
+        .appendField('delay')
+        .appendField(new Blockly.FieldNumber(500, 100, 2000), 'DELAY');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip('Blink text on OLED display');
+    }
+  };
+}
+
+if (!Blockly.Blocks['oled_animation_scroll']) {
+  Blockly.Blocks['oled_animation_scroll'] = {
+    init: function() {
+      this.appendValueInput('TEXT').setCheck('String').appendField('OLED scroll text')
+        .appendField('direction')
+        .appendField(new Blockly.FieldDropdown([
+          ["Left", "LEFT"],
+          ["Right", "RIGHT"],
+          ["Up", "UP"],
+          ["Down", "DOWN"]
+        ]), 'DIRECTION')
+        .appendField('speed')
+        .appendField(new Blockly.FieldNumber(100, 50, 500), 'SPEED');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(160);
+      this.setTooltip('Scroll text on OLED display');
+    }
+  };
 }
 
 

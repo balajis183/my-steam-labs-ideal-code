@@ -22,6 +22,95 @@ Blockly.JavaScript.forBlock['read_pin'] = function(block, generator) {
   ];
 };
 
+// ========================================
+// NEW JAVASCRIPT FORBLOCK GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.JavaScript.forBlock['pin_mode'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `setPinMode(${pin}, ${mode});\n`;
+};
+
+// Analog read
+Blockly.JavaScript.forBlock['analog_read'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  return [`readAnalogPin(${pin})`, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+// Analog write (PWM)
+Blockly.JavaScript.forBlock['analog_write'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `writeAnalogPin(${pin}, ${value});\n`;
+};
+
+// Motor speed control
+Blockly.JavaScript.forBlock['motor_speed'] = function(block, generator) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `setMotorSpeed("${motor}", ${speed});\n`;
+};
+
+// IR sensor analog read
+Blockly.JavaScript.forBlock['ir_sensor_analog'] = function(block, generator) {
+  return ['readIRAnalog()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+// WiFi connect
+Blockly.JavaScript.forBlock['wifi_connect'] = function(block, generator) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `wifiConnect("${ssid}", "${password}");\n`;
+};
+
+// WiFi send
+Blockly.JavaScript.forBlock['wifi_send'] = function(block, generator) {
+  var data = Blockly.JavaScript.valueToCode(block, 'DATA', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifiSend(${data}, "${ip}", ${port});\n`;
+};
+
+// WiFi receive
+Blockly.JavaScript.forBlock['wifi_receive'] = function(block, generator) {
+  var port = block.getFieldValue('PORT');
+  return [`wifiReceive(${port})`, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+// Enhanced OLED display variable
+Blockly.JavaScript.forBlock['oled_display_variable'] = function(block, generator) {
+  var variable = Blockly.JavaScript.valueToCode(block, 'VARIABLE', Blockly.JavaScript.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayVariableOnOLED(${variable}, ${x}, ${y});\n`;
+};
+
+// Enhanced OLED display character
+Blockly.JavaScript.forBlock['oled_display_char'] = function(block, generator) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayCharOnOLED("${char}", ${x}, ${y});\n`;
+};
+
+// Enhanced OLED animation blink
+Blockly.JavaScript.forBlock['oled_animation_blink'] = function(block, generator) {
+  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blinkTextOnOLED(${text}, ${times}, ${delay});\n`;
+};
+
+// Enhanced OLED animation scroll
+Blockly.JavaScript.forBlock['oled_animation_scroll'] = function(block, generator) {
+  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scrollTextOnOLED(${text}, "${direction}", ${speed});\n`;
+};
+
 // Back-compat: older style also defined
 Blockly.JavaScript['set_pin'] = function(block) {
   var pin = Blockly.JavaScript.valueToCode(block, 'PIN', Blockly.JavaScript.ORDER_ATOMIC) || '0';
@@ -90,6 +179,84 @@ Blockly.JavaScript['oled_display_colored'] = function(block) {
   const y = Blockly.JavaScript.valueToCode(block, 'Y', Blockly.JavaScript.ORDER_ATOMIC) || '0';
   const color = Blockly.JavaScript.valueToCode(block, 'COLOR', Blockly.JavaScript.ORDER_ATOMIC) || '"white"';
   return `showOnOLED(${text}, ${x}, ${y}, ${color});\n`;
+};
+
+// ========================================
+// NEW JAVASCRIPT GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.JavaScript['pin_mode'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `setPinMode(${pin}, ${mode});\n`;
+};
+
+Blockly.JavaScript['analog_read'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  return [`readAnalogPin(${pin})`, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+Blockly.JavaScript['analog_write'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `writeAnalogPin(${pin}, ${value});\n`;
+};
+
+Blockly.JavaScript['motor_speed'] = function(block) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `setMotorSpeed("${motor}", ${speed});\n`;
+};
+
+Blockly.JavaScript['ir_sensor_analog'] = function(block) {
+  return ['readIRAnalog()', Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+Blockly.JavaScript['wifi_connect'] = function(block) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `wifiConnect("${ssid}", "${password}");\n`;
+};
+
+Blockly.JavaScript['wifi_send'] = function(block) {
+  var data = Blockly.JavaScript.valueToCode(block, 'DATA', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifiSend(${data}, "${ip}", ${port});\n`;
+};
+
+Blockly.JavaScript['wifi_receive'] = function(block) {
+  var port = block.getFieldValue('PORT');
+  return [`wifiReceive(${port})`, Blockly.JavaScript.ORDER_FUNCTION_CALL];
+};
+
+Blockly.JavaScript['oled_display_variable'] = function(block) {
+  var variable = Blockly.JavaScript.valueToCode(block, 'VARIABLE', Blockly.JavaScript.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayVariableOnOLED(${variable}, ${x}, ${y});\n`;
+};
+
+Blockly.JavaScript['oled_display_char'] = function(block) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `displayCharOnOLED("${char}", ${x}, ${y});\n`;
+};
+
+Blockly.JavaScript['oled_animation_blink'] = function(block) {
+  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blinkTextOnOLED(${text}, ${times}, ${delay});\n`;
+};
+
+Blockly.JavaScript['oled_animation_scroll'] = function(block) {
+  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scrollTextOnOLED(${text}, "${direction}", ${speed});\n`;
 };
 
 Blockly.JavaScript['time_delay'] = function(block) {

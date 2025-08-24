@@ -87,6 +87,95 @@ Blockly.Python['oled_display_colored'] = function(block) {
   return `show_on_oled(${text}, ${x}, ${y}, ${color})\n`;
 };
 
+// ========================================
+// NEW PYTHON GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.Python['pin_mode'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `set_pin_mode(${pin}, ${mode})\n`;
+};
+
+// Analog read
+Blockly.Python['analog_read'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// Analog write (PWM)
+Blockly.Python['analog_write'] = function(block) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `write_analog_pin(${pin}, ${value})\n`;
+};
+
+// Motor speed control
+Blockly.Python['motor_speed'] = function(block) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `set_motor_speed("${motor}", ${speed})\n`;
+};
+
+// IR sensor analog read
+Blockly.Python['ir_sensor_analog'] = function() {
+  return ['read_ir_analog()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// WiFi connect
+Blockly.Python['wifi_connect'] = function(block) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `wifi_connect("${ssid}", "${password}")\n`;
+};
+
+// WiFi send
+Blockly.Python['wifi_send'] = function(block) {
+  var data = Blockly.Python.valueToCode(block, 'DATA', Blockly.Python.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifi_send(${data}, "${ip}", ${port})\n`;
+};
+
+// WiFi receive
+Blockly.Python['wifi_receive'] = function(block) {
+  var port = block.getFieldValue('PORT');
+  return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// Enhanced OLED display variable
+Blockly.Python['oled_display_variable'] = function(block) {
+  var variable = Blockly.Python.valueToCode(block, 'VARIABLE', Blockly.Python.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `display_variable_on_oled(${variable}, ${x}, ${y})\n`;
+};
+
+// Enhanced OLED display character
+Blockly.Python['oled_display_char'] = function(block) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `display_char_on_oled("${char}", ${x}, ${y})\n`;
+};
+
+// Enhanced OLED animation blink
+Blockly.Python['oled_animation_blink'] = function(block) {
+  var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blink_text_on_oled(${text}, ${times}, ${delay})\n`;
+};
+
+// Enhanced OLED animation scroll
+Blockly.Python['oled_animation_scroll'] = function(block) {
+  var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scroll_text_on_oled(${text}, "${direction}", ${speed})\n`;
+};
+
 Blockly.Python['time_delay'] = function(block) {
   var value = Blockly.Python.valueToCode(block, 'TIME', Blockly.Python.ORDER_ATOMIC) || '0';
   return 'time.sleep(' + value + ' / 1000)\n';
@@ -169,6 +258,95 @@ Blockly.Python['text'] = function(block) {
 Blockly.Python['text_print'] = function(block) {
   const text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_NONE) || '""';
   return 'print(' + text + ')\n';
+};
+
+// ========================================
+// NEW PYTHON FORBLOCK GENERATORS FOR MISSING BLOCKS
+// ========================================
+
+// Pin mode configuration
+Blockly.Python.forBlock['pin_mode'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var mode = block.getFieldValue('MODE');
+  return `set_pin_mode(${pin}, ${mode})\n`;
+};
+
+// Analog read
+Blockly.Python.forBlock['analog_read'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// Analog write (PWM)
+Blockly.Python.forBlock['analog_write'] = function(block, generator) {
+  var pin = block.getFieldValue('PIN');
+  var value = block.getFieldValue('VALUE');
+  return `write_analog_pin(${pin}, ${value})\n`;
+};
+
+// Motor speed control
+Blockly.Python.forBlock['motor_speed'] = function(block, generator) {
+  var motor = block.getFieldValue('MOTOR');
+  var speed = block.getFieldValue('SPEED');
+  return `set_motor_speed("${motor}", ${speed})\n`;
+};
+
+// IR sensor analog read
+Blockly.Python.forBlock['ir_sensor_analog'] = function(block, generator) {
+  return ['read_ir_analog()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// WiFi connect
+Blockly.Python.forBlock['wifi_connect'] = function(block, generator) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `wifi_connect("${ssid}", "${password}")\n`;
+};
+
+// WiFi send
+Blockly.Python.forBlock['wifi_send'] = function(block, generator) {
+  var data = Blockly.Python.valueToCode(block, 'DATA', Blockly.Python.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifi_send(${data}, "${ip}", ${port})\n`;
+};
+
+// WiFi receive
+Blockly.Python.forBlock['wifi_receive'] = function(block, generator) {
+  var port = block.getFieldValue('PORT');
+  return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// Enhanced OLED display variable
+Blockly.Python.forBlock['oled_display_variable'] = function(block, generator) {
+  var variable = Blockly.Python.valueToCode(block, 'VARIABLE', Blockly.Python.ORDER_ATOMIC) || '0';
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `display_variable_on_oled(${variable}, ${x}, ${y})\n`;
+};
+
+// Enhanced OLED display character
+Blockly.Python.forBlock['oled_display_char'] = function(block, generator) {
+  var char = block.getFieldValue('CHAR');
+  var x = block.getFieldValue('X');
+  var y = block.getFieldValue('Y');
+  return `display_char_on_oled("${char}", ${x}, ${y})\n`;
+};
+
+// Enhanced OLED animation blink
+Blockly.Python.forBlock['oled_animation_blink'] = function(block, generator) {
+  var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
+  var times = block.getFieldValue('TIMES');
+  var delay = block.getFieldValue('DELAY');
+  return `blink_text_on_oled(${text}, ${times}, ${delay})\n`;
+};
+
+// Enhanced OLED animation scroll
+Blockly.Python.forBlock['oled_animation_scroll'] = function(block, generator) {
+  var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
+  var direction = block.getFieldValue('DIRECTION');
+  var speed = block.getFieldValue('SPEED');
+  return `scroll_text_on_oled(${text}, "${direction}", ${speed})\n`;
 };
 
 // Ensure forBlock proxies for Python too, so toolbox blocks route correctly

@@ -99,14 +99,19 @@
       <category name="Pin I/O" colour="230">
         <block type="set_pin"></block>
         <block type="read_pin"></block>
+        <block type="pin_mode"></block>
+        <block type="analog_read"></block>
+        <block type="analog_write"></block>
       </category>
       <category name="Motors" colour="20">
         <block type="dc_motor"></block>
         <block type="servo_motor"></block>
+        <block type="motor_speed"></block>
       </category>
       <category name="Sensors" colour="120">
         <block type="ldr_sensor"></block>
         <block type="ir_sensor"></block>
+        <block type="ir_sensor_analog"></block>
         <block type="temp_sensor"></block>
         <block type="ultrasonic_sensor"></block>
         <block type="touch_sensor"></block>
@@ -116,15 +121,26 @@
         <block type="joystick1"></block>
         <block type="joystick2"></block>
       </category>
-      <!-- *** NEW BLUETOOTH CATEGORY ADDED HERE *** -->
-      <category name="Bluetooth" colour="290">
-        <block type="bluetooth_setup"></block>
-        <block type="bluetooth_send"></block>
-        <block type="bluetooth_available"></block>
-        <block type="bluetooth_read"></block>
+      <!-- *** COMMUNICATION CATEGORY WITH BLUETOOTH AND WIFI *** -->
+      <category name="Communication" colour="290">
+        <category name="Bluetooth" colour="290">
+          <block type="bluetooth_setup"></block>
+          <block type="bluetooth_send"></block>
+          <block type="bluetooth_available"></block>
+          <block type="bluetooth_read"></block>
+        </category>
+        <category name="WiFi" colour="290">
+          <block type="wifi_connect"></block>
+          <block type="wifi_send"></block>
+          <block type="wifi_receive"></block>
+        </category>
       </category>
       <category name="OLED Display" colour="330">
         <block type="oled_show"></block>
+        <block type="oled_display_variable"></block>
+        <block type="oled_display_char"></block>
+        <block type="oled_animation_blink"></block>
+        <block type="oled_animation_scroll"></block>
       </category>
       <category name="Time" colour="195">
         <block type="time_delay">
