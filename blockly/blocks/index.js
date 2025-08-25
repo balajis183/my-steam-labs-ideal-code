@@ -378,6 +378,27 @@ Blockly.Blocks['oled_show'] = {
     this.setColour(330);
   }
 };
+
+// New enhanced OLED show block with color selection
+Blockly.Blocks['oled_show_color'] = {
+  init: function() {
+    this.appendValueInput('TEXT').setCheck('String').appendField('show');
+    this.appendDummyInput().appendField('on OLED display in color');
+    this.appendDummyInput().appendField(new Blockly.FieldDropdown([
+      ["White", "WHITE"],
+      ["Red", "RED"],
+      ["Green", "GREEN"],
+      ["Blue", "BLUE"],
+      ["Yellow", "YELLOW"]
+    ]), 'COLOR');
+    this.setInputsInline(true);
+    this.setPreviousStatement(true, null);
+    this.setNextStatement(true, null);
+    this.setColour(330);
+    this.setTooltip('Display text on OLED with specified color');
+    this.setHelpUrl('');
+  }
+};
 // JavaScript generator moved to separate file
 
 

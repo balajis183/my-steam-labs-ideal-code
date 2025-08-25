@@ -173,6 +173,12 @@ Blockly.JavaScript['oled_show'] = function(block) {
   return 'oledDisplay(' + text + ');\n';
 };
 
+Blockly.JavaScript['oled_show_color'] = function(block) {
+  var text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
+  var color = block.getFieldValue('COLOR');
+  return `showOnOLED(${text}, 0, 0, "${color}");\n`;
+};
+
 Blockly.JavaScript['oled_display_colored'] = function(block) {
   const text = Blockly.JavaScript.valueToCode(block, 'TEXT', Blockly.JavaScript.ORDER_ATOMIC) || '""';
   const x = Blockly.JavaScript.valueToCode(block, 'X', Blockly.JavaScript.ORDER_ATOMIC) || '0';
@@ -347,7 +353,7 @@ Blockly.JavaScript['text_print'] = function(block) {
 try {
   const jsHandled = [
     'set_pin','read_pin','dc_motor','servo_motor','ldr_sensor','ir_sensor','temp_sensor',
-    'ultrasonic_sensor','touch_sensor','color_sensor','joystick1','joystick2','oled_show',
+    'ultrasonic_sensor','touch_sensor','color_sensor','joystick1','joystick2','oled_show','oled_show_color',
     'oled_display_colored','time_delay','enhanced_if','enhanced_compare','enhanced_logic',
     'controls_if','controls_repeat_ext','controls_whileUntil','math_number','math_arithmetic',
     'logic_compare','logic_operation','logic_negate','logic_boolean','variables_declare',
@@ -362,7 +368,7 @@ try {
 (function ensureForBlockProxies(){
   const types = [
     'set_pin','read_pin','dc_motor','servo_motor','ldr_sensor','ir_sensor','temp_sensor',
-    'ultrasonic_sensor','touch_sensor','color_sensor','joystick1','joystick2','oled_show',
+    'ultrasonic_sensor','touch_sensor','color_sensor','joystick1','joystick2','oled_show','oled_show_color',
     'oled_display_colored','time_delay','enhanced_if','enhanced_compare','enhanced_logic',
     'controls_if','controls_repeat_ext','controls_whileUntil','math_number','math_arithmetic',
     'logic_compare','logic_operation','logic_negate','logic_boolean','variables_declare',
