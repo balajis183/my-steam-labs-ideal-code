@@ -5,6 +5,8 @@ let currentLanguage = 'python'; // Default language
 let lastGeneratedLanguage = 'python'; // Track last generated language
 let lastCompiledPath = null;
 let lastCompiledSuccess = false;
+let isRunning = false;
+let isUploading = false;
 
 // Terminal output functions
 function appendTerminalOutput(message) {
@@ -352,6 +354,15 @@ async function compileCode() {
 }
 
 async function uploadCode() {
+  if (isUploading) {
+    appendTerminalOutput('⏳ Upload already in progress...');
+    return;
+  }
+  isUploading = true;
+  const runBtn = document.getElementById('runBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  if (uploadBtn) uploadBtn.disabled = true;
+  if (runBtn) runBtn.disabled = true;
   const code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
@@ -428,9 +439,23 @@ async function uploadCode() {
   } catch (error) {
     appendTerminalOutput(`❌ Upload error: ${error.message}`);
   }
+  finally {
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
+  }
 }
 
 async function runCode() {
+  if (isRunning) {
+    appendTerminalOutput('⏳ A run is already in progress...');
+    return;
+  }
+  isRunning = true;
+  const runBtn = document.getElementById('runBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  if (runBtn) runBtn.disabled = true;
+  if (uploadBtn) uploadBtn.disabled = true;
   const code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
@@ -504,7 +529,29 @@ async function runCode() {
   } catch (error) {
     appendTerminalOutput(`❌ Execution error: ${error.message}`);
   }
+  finally {
+    isRunning = false;
+    if (runBtn) runBtn.disabled = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+  }
 }
+
+// Safety: force-clear running flag after 30s in case the main process hangs
+setInterval(() => {
+  const runBtn = document.getElementById('runBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  if (isRunning) {
+    // If buttons are enabled but flag stuck, clear it
+    if (runBtn && !runBtn.disabled) {
+      isRunning = false;
+    }
+  }
+  if (isUploading) {
+    if (uploadBtn && !uploadBtn.disabled) {
+      isUploading = false;
+    }
+  }
+}, 30000);
 
 // Make functions globally available
 window.compileCode = compileCode;
