@@ -99,9 +99,12 @@ ipcMain.handle('compile-python', async (_e, code) => {
     
     // For MicroPython, we'll just validate the syntax
     return await new Promise(res => {
-      exec(`python -m py_compile "${pyPath}"`, (err, out, errOut) => {
+      // Use full path to Python for Windows compatibility
+      const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+      
+      exec(`"${pythonPath}" -m py_compile "${pyPath}"`, (err, out, errOut) => {
         if (err) {
-          res({ success: false, error: errOut || out || err.message });
+          res({ success: false, error: `Python compilation failed: ${errOut || out || err.message}` });
         } else {
           res({ success: true, output: 'Python syntax validation successful', compiledPath: pyPath });
         }
@@ -168,29 +171,72 @@ ipcMain.handle('compile-c', async (_e, code) => {
 // ---- Multi-Language Upload Functions ----
 ipcMain.handle('upload-python', async (_e, code, port) => {
   try {
-    if (currentPort && currentPort.isOpen) { 
-      await new Promise(r => currentPort.close(r)); 
-      currentPort = null; 
+    // Enhanced port cleanup before using mpremote
+    if (currentPort) { 
+      try {
+        console.log('🔄 Enhanced port cleanup before upload...');
+        
+        // Close the port gracefully
+        if (currentPort.isOpen) {
+          currentPort.close();
+        }
+        currentPort.destroy();
+        currentPort = null;
+        
+        // Kill any Python/mpremote processes that might be using the port
+        console.log('🔄 Killing conflicting processes...');
+        exec('taskkill /f /im "python.exe" 2>nul', () => {});
+        exec('taskkill /f /im "mpremote.exe" 2>nul', () => {});
+        
+        // Wait for processes to fully terminate
+        console.log('🔄 Waiting for process cleanup...');
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Force release the COM port using Windows commands
+        console.log('🔄 Force releasing COM port...');
+        exec(`mode ${port}: BAUD=115200 PARITY=N DATA=8 STOP=1`, () => {});
+        
+        // Additional wait for port release
+        console.log('🔄 Waiting for port release...');
+        await new Promise(r => setTimeout(r, 3000));
+        
+        console.log('✅ Port cleanup completed');
+      } catch (err) {
+        console.error('Error during port cleanup:', err);
+        currentPort = null;
+      }
     }
+    
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-upload-'));
     const pyPath = path.join(tmpDir, 'main.py');
     fs.writeFileSync(pyPath, code, 'utf-8');
     
     return await new Promise(res => {
-      exec(`mpremote connect ${port} fs cp "${pyPath}" :main.py`, (err1, out1, errOut1) => {
-        safeSend('terminal-output', out1 + errOut1);
-        if (err1) return res({ success: false, error: out1 + errOut1 });
-        exec(`mpremote connect ${port} reset soft`, (_e2, out2, errOut2) => {
-          safeSend('terminal-output', out2 + errOut2);
-          setTimeout(() => {
-            safeSend('terminal-output', `[Re-opening port ${port} after reset]`);
-            safeSend('reopen-port', port);
-            res({ success: true });
-          }, 2000);
-        });
+      // Use full Python path to run mpremote
+      const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+      
+      // Upload with enhanced error handling
+      safeSend('terminal-output', '🚀 Uploading code to ESP32...');
+      
+      const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath}" :main.py`;
+      console.log(`Executing: ${uploadCommand}`);
+      
+      exec(uploadCommand, (err1, out1, errOut1) => {
+        if (err1) {
+          console.error('❌ Upload failed:', err1.message);
+          console.error('Stderr:', errOut1);
+          safeSend('terminal-output', `❌ Upload failed: ${errOut1 || err1.message}`);
+          res({ success: false, error: `Upload failed: ${errOut1 || err1.message}` });
+          return;
+        }
+        
+        console.log('✅ Upload successful');
+        safeSend('terminal-output', '✅ Upload successful!');
+        res({ success: true });
       });
     });
   } catch (err) {
+    console.error('❌ Upload error:', err.message);
     return { success: false, error: err.message }; 
   }
 });
@@ -258,18 +304,100 @@ ipcMain.handle('run-python', async (_e, code, port) => {
     const pyPath = path.join(tmpDir, 'main.py');
     fs.writeFileSync(pyPath, code, 'utf-8');
     
-    return await new Promise(resolve => {
+    return await new Promise(async (resolve) => {
       if (port) {
-        // Run on hardware via mpremote
-        exec(`mpremote connect ${port} run "${pyPath}"`, (err, stdout, stderr) => {
-          if (err) resolve(stderr || err.message || 'Unknown error');
-          else resolve(stdout || 'No output');
+        // Enhanced port cleanup before using mpremote
+        if (currentPort) {
+          try {
+            console.log('🔄 Enhanced port cleanup before mpremote...');
+            
+            // Close the port gracefully
+            if (currentPort.isOpen) {
+              currentPort.close();
+            }
+            currentPort.destroy();
+            currentPort = null;
+            
+            // Kill any Python/mpremote processes that might be using the port
+            console.log('🔄 Killing conflicting processes...');
+            exec('taskkill /f /im "python.exe" 2>nul', () => {});
+            exec('taskkill /f /im "mpremote.exe" 2>nul', () => {});
+            
+            // Wait for processes to fully terminate
+            console.log('🔄 Waiting for process cleanup...');
+            await new Promise(r => setTimeout(r, 2000));
+            
+            // Force release the COM port using Windows commands
+            console.log('🔄 Force releasing COM port...');
+            exec(`mode ${port}: BAUD=115200 PARITY=N DATA=8 STOP=1`, () => {});
+            
+            // Additional wait for port release
+            console.log('🔄 Waiting for port release...');
+            await new Promise(r => setTimeout(r, 3000));
+            
+            console.log('✅ Port cleanup completed');
+            
+          } catch (err) {
+            console.error('Error during port cleanup:', err);
+            currentPort = null;
+          }
+        }
+        
+        // Run on hardware via mpremote using full Python path
+        const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+        
+        console.log(`🚀 Executing: "${pythonPath}" -m mpremote connect ${port} run "${pyPath}"`);
+        
+        // Enhanced mpremote execution with better error handling
+        const mpremoteCommand = `"${pythonPath}" -m mpremote connect ${port} run "${pyPath}"`;
+        
+        exec(mpremoteCommand, (err, stdout, stderr) => {
+          if (err) {
+            console.error('❌ Direct execution failed:', err.message);
+            console.error('Stderr:', stderr);
+            
+            // Try alternative approach with soft-reset first
+            console.log('🔄 Trying alternative approach with soft-reset...');
+            const alternativeCommand = `"${pythonPath}" -m mpremote connect ${port} soft-reset && "${pythonPath}" -m mpremote connect ${port} run "${pyPath}"`;
+            
+            exec(alternativeCommand, (err2, stdout2, stderr2) => {
+              if (err2) {
+                console.error('❌ Alternative execution also failed:', err2.message);
+                console.error('Stderr2:', stderr2);
+                
+                // Final fallback: use exec instead of run
+                console.log('🔄 Trying final fallback with exec...');
+                const fallbackCommand = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('${pyPath}').read())"`;
+                
+                exec(fallbackCommand, (err3, stdout3, stderr3) => {
+                  if (err3) {
+                    console.error('❌ All execution methods failed:', err3.message);
+                    resolve(`Hardware execution failed: ${stderr3 || err3.message || 'All execution methods failed. Check if ESP32 is properly connected and not in use by another program.'}`);
+                  } else {
+                    console.log('✅ Fallback execution successful');
+                    resolve(stdout3 || 'No output');
+                  }
+                });
+              } else {
+                console.log('✅ Alternative execution successful');
+                resolve(stdout2 || 'No output');
+              }
+            });
+          } else {
+            console.log('✅ Direct execution successful');
+            resolve(stdout || 'No output');
+          }
         });
       } else {
-        // Run locally with Python
-        exec(`python "${pyPath}"`, (err, stdout, stderr) => {
-          if (err) resolve(stderr || err.message || 'Unknown error');
-          else resolve(stdout || 'No output');
+        // Run locally with Python using full path
+        const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+        
+        exec(`"${pythonPath}" "${pyPath}"`, (err, stdout, stderr) => {
+          if (err) {
+            resolve(`Local execution failed: ${stderr || err.message || 'Unknown error'}`);
+          } else {
+            resolve(stdout || 'No output');
+          }
         });
       }
     });
@@ -388,7 +516,9 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
 // ---- Board Status Check ----
 ipcMain.handle('check-board', async () => {
   return new Promise((resolve, reject) => {
-    const python = spawn('python', [path.join(__dirname, '..', 'status.py')]);
+    // Use full Python path for Windows compatibility
+    const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+    const python = spawn(pythonPath, [path.join(__dirname, '..', 'status.py')]);
     let output = '';
 
     python.stdout.on('data', data => {
@@ -404,7 +534,7 @@ ipcMain.handle('check-board', async () => {
     });
 
     python.on('error', err => {
-      reject(err);
+      reject(new Error(`Python execution failed: ${err.message}`));
     });
   });
 });

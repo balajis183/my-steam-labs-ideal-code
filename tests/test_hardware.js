@@ -19,13 +19,29 @@ async function testHardwareConnectivity() {
   // Test 2: Check mpremote availability
   console.log('\n2. Testing mpremote availability:');
   try {
-    exec('mpremote --version', (err, stdout, stderr) => {
-      if (err) {
-        console.log('   ❌ mpremote not found. Please install it with: pip install mpremote');
-      } else {
-        console.log(`   ✅ mpremote available: ${stdout.trim()}`);
+    // Try different Python executables for Windows compatibility
+    const pythonCommands = ['python', 'python3', 'py'];
+    let currentIndex = 0;
+    
+    const tryMpremote = () => {
+      if (currentIndex >= pythonCommands.length) {
+        console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
+        return;
       }
-    });
+      
+      const pythonCmd = pythonCommands[currentIndex];
+      exec(`"${pythonCmd}" -m mpremote --version`, (err, stdout, stderr) => {
+        if (err) {
+          console.log(`   ❌ mpremote not found with '${pythonCmd}'`);
+          currentIndex++;
+          tryMpremote();
+        } else {
+          console.log(`   ✅ mpremote available with '${pythonCmd}': ${stdout.trim()}`);
+        }
+      });
+    };
+    
+    tryMpremote();
   } catch (err) {
     console.log(`   ❌ Error checking mpremote: ${err.message}`);
   }
@@ -33,13 +49,29 @@ async function testHardwareConnectivity() {
   // Test 3: Check Python availability
   console.log('\n3. Testing Python availability:');
   try {
-    exec('python --version', (err, stdout, stderr) => {
-      if (err) {
-        console.log('   ❌ Python not found in PATH');
-      } else {
-        console.log(`   ✅ Python available: ${stdout.trim()}`);
+    // Try different Python executables for Windows compatibility
+    const pythonCommands = ['python', 'python3', 'py'];
+    let currentIndex = 0;
+    
+    const tryPython = () => {
+      if (currentIndex >= pythonCommands.length) {
+        console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
+        return;
       }
-    });
+      
+      const pythonCmd = pythonCommands[currentIndex];
+      exec(`${pythonCmd} --version`, (err, stdout, stderr) => {
+        if (err) {
+          console.log(`   ❌ Python command '${pythonCmd}' not found`);
+          currentIndex++;
+          tryPython();
+        } else {
+          console.log(`   ✅ Python available with '${pythonCmd}': ${stdout.trim()}`);
+        }
+      });
+    };
+    
+    tryPython();
   } catch (err) {
     console.log(`   ❌ Error checking Python: ${err.message}`);
   }

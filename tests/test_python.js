@@ -26,30 +26,61 @@ print("Unique ID:", machine.unique_id())`;
     const pyPath = path.join(tmpDir, 'test.py');
     fs.writeFileSync(pyPath, samplePythonCode, 'utf-8');
     
-    exec(`python "${pyPath}"`, (err, stdout, stderr) => {
-      if (err) {
-        console.log('   ❌ Python execution failed:');
-        console.log('   Error:', err.message);
-        console.log('   Stderr:', stderr);
-      } else {
-        console.log('   ✅ Python execution successful:');
-        console.log('   Output:', stdout);
+    // Try different Python executables for Windows compatibility
+    const pythonCommands = ['python', 'python3', 'py'];
+    let currentIndex = 0;
+    
+    const tryPython = () => {
+      if (currentIndex >= pythonCommands.length) {
+        console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
+        return;
       }
-    });
+      
+      const pythonCmd = pythonCommands[currentIndex];
+      exec(`"${pythonCmd}" "${pyPath}"`, (err, stdout, stderr) => {
+        if (err) {
+          console.log(`   ❌ Python execution failed with '${pythonCmd}':`);
+          console.log('   Error:', err.message);
+          console.log('   Stderr:', stderr);
+          currentIndex++;
+          tryPython();
+        } else {
+          console.log(`   ✅ Python execution successful with '${pythonCmd}':`);
+          console.log('   Output:', stdout);
+        }
+      });
+    };
+    
+    tryPython();
   } catch (err) {
     console.log(`   ❌ Error creating test file: ${err.message}`);
   }
 
   // Test 3: Test mpremote availability
   console.log('\n3. Testing mpremote:');
-  exec('mpremote --version', (err, stdout, stderr) => {
-    if (err) {
-      console.log('   ❌ mpremote not found');
-      console.log('   Please install with: pip install mpremote');
-    } else {
-      console.log(`   ✅ mpremote available: ${stdout.trim()}`);
+  // Try different Python executables for Windows compatibility
+  const pythonCommands = ['python', 'python3', 'py'];
+  let currentIndex = 0;
+  
+  const tryMpremote = () => {
+    if (currentIndex >= pythonCommands.length) {
+      console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
+      return;
     }
-  });
+    
+    const pythonCmd = pythonCommands[currentIndex];
+    exec(`"${pythonCmd}" -m mpremote --version`, (err, stdout, stderr) => {
+      if (err) {
+        console.log(`   ❌ mpremote not found with '${pythonCmd}'`);
+        currentIndex++;
+        tryMpremote();
+      } else {
+        console.log(`   ✅ mpremote available with '${pythonCmd}': ${stdout.trim()}`);
+      }
+    });
+  };
+  
+  tryMpremote();
 
   // Test 4: Test serial port detection
   console.log('\n4. Testing Serial Port Detection:');

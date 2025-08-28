@@ -52,9 +52,17 @@ window.showTerminal = showTerminal;
 // Get current code from Monaco editor
 function getCurrentCode() {
   const editorWindow = document.getElementById('monacoEditor').contentWindow;
+  console.log('🔍 Editor window:', editorWindow);
+  console.log('🔍 Editor window methods:', Object.getOwnPropertyNames(editorWindow || {}));
+  
   if (editorWindow && editorWindow.getEditorValue) {
-    return editorWindow.getEditorValue();
+    const code = editorWindow.getEditorValue();
+    console.log('🔍 Retrieved code length:', code ? code.length : 0);
+    console.log('🔍 Code preview:', code ? code.substring(0, 200) : 'No code');
+    return code;
   }
+  
+  console.log('❌ Could not get code from editor');
   return '';
 }
 
@@ -183,29 +191,119 @@ function getSelectedLanguage(code) {
   const langSelect = document.getElementById('languageSelect');
   if (langSelect) {
     const selected = langSelect.value;
-    if (selected === 'python' || selected === 'cpp') {
+    if (selected === 'auto') {
+      // Auto-detect language
+      return detectLanguageFromCode(code);
+    } else if (selected === 'python' || selected === 'cpp' || selected === 'javascript' || selected === 'c') {
       return selected;
     }
   }
   // Fallback to auto-detect
-  // (existing auto-detect logic)
-  if (code.includes('import ') || code.includes('print(') || code.includes('def ')) {
-    return 'python';
-  } else if (code.includes('#include') || code.includes('int main()') || code.includes('void setup()')) {
+  return detectLanguageFromCode(code);
+}
+
+// Enhanced language detection function
+function detectLanguageFromCode(code) {
+  if (!code || !code.trim()) {
+    return lastGeneratedLanguage || 'python';
+  }
+  
+  // C++ detection (more comprehensive)
+  if (code.includes('#include') || 
+      code.includes('int main()') || 
+      code.includes('void main()') ||
+      code.includes('void setup()') || 
+      code.includes('void loop()') ||
+      code.includes('Arduino.h') ||
+      code.includes('ESP32') ||
+      code.includes('std::cout') ||
+      code.includes('std::cin') ||
+      code.includes('namespace std') ||
+      code.includes('class ') ||
+      code.includes('public:') ||
+      code.includes('private:') ||
+      code.includes('protected:') ||
+      code.includes('template<') ||
+      code.includes('std::') ||
+      code.includes('vector<') ||
+      code.includes('string ') ||
+      code.includes('cout <<') ||
+      code.includes('cin >>') ||
+      code.includes('return 0;') ||
+      code.includes('using namespace')) {
     return 'cpp';
-  } else if (code.includes('function') || code.includes('console.log') || code.includes('var ') || code.includes('let ')) {
-    return 'javascript';
-  } else if (code.includes('#include <stdio.h>') || code.includes('printf(')) {
+  }
+  
+  // C detection
+  if (code.includes('#include <stdio.h>') || 
+      code.includes('printf(') || 
+      code.includes('scanf(') ||
+      code.includes('main()') ||
+      code.includes('malloc(') ||
+      code.includes('free(')) {
     return 'c';
   }
+  
+  // Python detection
+  if (code.includes('import ') || 
+      code.includes('print(') || 
+      code.includes('def ') ||
+      code.includes('if __name__') ||
+      code.includes('class ') ||
+      code.includes('try:') ||
+      code.includes('except:') ||
+      code.includes('with open(')) {
+    return 'python';
+  }
+  
+  // JavaScript detection
+  if (code.includes('function') || 
+      code.includes('console.log') || 
+      code.includes('var ') || 
+      code.includes('let ') ||
+      code.includes('const ') ||
+      code.includes('=>') ||
+      code.includes('async ') ||
+      code.includes('await ')) {
+    return 'javascript';
+  }
+  
   return lastGeneratedLanguage || 'python';
+}
+
+// Function to update language dropdown based on detected language
+function updateLanguageDropdown(detectedLanguage) {
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = detectedLanguage;
+    console.log(`Language dropdown updated to: ${detectedLanguage}`);
+  }
+}
+
+// Function to auto-detect language when code changes
+function autoDetectLanguageFromCode() {
+  const code = getCurrentCode();
+  if (code && code.trim()) {
+    const detectedLanguage = detectLanguageFromCode(code);
+    updateLanguageDropdown(detectedLanguage);
+    setCurrentLanguage(detectedLanguage);
+    console.log(`Auto-detected language: ${detectedLanguage}`);
+    // No terminal output - silent detection
+  }
 }
 
 // Update compileCode, uploadCode, runCode to use getSelectedLanguage
 async function compileCode() {
   const code = getCurrentCode();
+  // Auto-detect language first
+  autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
+  
+  // Debug: Show what language was detected
+  console.log(`🔍 Code content preview: ${code.substring(0, 100)}...`);
+  console.log(`🎯 Detected language: ${language}`);
+  console.log(`📝 Language dropdown value: ${document.getElementById('languageSelect')?.value}`);
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to compile. Please generate some code first.');
@@ -255,6 +353,8 @@ async function compileCode() {
 
 async function uploadCode() {
   const code = getCurrentCode();
+  // Auto-detect language first
+  autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
   
@@ -332,6 +432,8 @@ async function uploadCode() {
 
 async function runCode() {
   const code = getCurrentCode();
+  // Auto-detect language first
+  autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
   
@@ -410,6 +512,17 @@ window.uploadCode = uploadCode;
 window.runCode = runCode;
 window.setCurrentLanguage = setCurrentLanguage;
 window.autoDetectLanguage = autoDetectLanguage; // Make autoDetectLanguage globally available
+
+// Test function for debugging language detection
+window.testLanguageDetection = function() {
+  console.log('🧪 Testing Language Detection...');
+  const code = getCurrentCode();
+  console.log('📝 Current code:', code);
+  const detected = detectLanguageFromCode(code);
+  console.log('🎯 Detected language:', detected);
+  updateLanguageDropdown(detected);
+  console.log('📋 Language dropdown updated to:', detected);
+};
 
 // Serial port management
 async function refreshPorts() {
