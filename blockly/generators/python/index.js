@@ -82,7 +82,7 @@ Blockly.Python['oled_show'] = function(block) {
 Blockly.Python['oled_show_color'] = function(block) {
   var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
   var color = block.getFieldValue('COLOR');
-  return `show_on_oled(${text}, 0, 0, "${color}")\n`;
+  return [`show_on_oled(${text}, 0, 0, "${color}")`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
 Blockly.Python['oled_display_colored'] = function(block) {
@@ -212,7 +212,8 @@ Blockly.Python['enhanced_logic'] = function(block) {
 
 Blockly.Python['my_program'] = function(block) {
   const body = Blockly.Python.statementToCode(block, 'PROGRAM');
-  return '# My Program\n' + body;
+  const safeBody = body && body.trim() ? body : (Blockly.Python.INDENT + 'pass\n');
+  return 'def msl():\n' + safeBody;
 };
 
 Blockly.Python['variables_declare'] = function(block) {
