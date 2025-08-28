@@ -79,6 +79,12 @@
         if (window.editor) {
           window.editor.focus();
           console.log('Monaco Editor initialized and focused');
+          
+          // Signal that editor is ready
+          window.editorReady = true;
+          if (window.parent && window.parent.postMessage) {
+            window.parent.postMessage({ type: 'editorReady' }, '*');
+          }
         }
       }, 100);
 
@@ -92,7 +98,13 @@
       // Expose functions for parent window to access
       window.getEditorValue = function() {
         try {
-          return window.editor ? window.editor.getValue() : '';
+          if (!window.editor) {
+            console.warn('Editor not initialized yet');
+            return '';
+          }
+          const value = window.editor.getValue();
+          console.log('getEditorValue called, returned length:', value ? value.length : 0);
+          return value || '';
         } catch (error) {
           console.error('Error getting editor value:', error);
           return '';
@@ -113,30 +125,42 @@
 
       window.setEditorValue = function(code) {
         try {
-          if (window.editor && typeof code === 'string') {
-            // Preserve cursor position if possible
-            const position = window.editor.getPosition();
-            window.editor.setValue(code);
-            
-            // Focus after setting value
-            setTimeout(() => {
-              window.editor.focus();
-              // Try to restore cursor position
-              if (position) {
-                try {
-                  window.editor.setPosition(position);
-                } catch (e) {
-                  // If position restoration fails, go to end
-                  window.editor.setPosition({
-                    lineNumber: window.editor.getModel().getLineCount(),
-                    column: 1
-                  });
-                }
-              }
-            }, 50);
+          if (!window.editor) {
+            console.warn('Editor not initialized yet');
+            return false;
           }
+          if (typeof code !== 'string') {
+            console.warn('Invalid code type:', typeof code);
+            return false;
+          }
+          
+          console.log('setEditorValue called with code length:', code.length);
+          
+          // Preserve cursor position if possible
+          const position = window.editor.getPosition();
+          window.editor.setValue(code);
+          
+          // Focus after setting value
+          setTimeout(() => {
+            window.editor.focus();
+            // Try to restore cursor position
+            if (position) {
+              try {
+                window.editor.setPosition(position);
+              } catch (e) {
+                // If position restoration fails, go to end
+                window.editor.setPosition({
+                  lineNumber: window.editor.getModel().getLineCount(),
+                  column: 1
+                });
+              }
+            }
+          }, 50);
+          
+          return true;
         } catch (error) {
           console.error('Error setting editor value:', error);
+          return false;
         }
       };
 

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Save/Load Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { margin: 5px; padding: 10px; font-size: 16px; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>Save/Load Code Test</h1>
+    
+    <div>
+        <button onclick="testSave()">Test Save Code</button>
+        <button onclick="testLoad()">Test Load Code</button>
+        <button onclick="testEditorReady()">Test Editor Ready</button>
+        <button onclick="clearStatus()">Clear Status</button>
+    </div>
+    
+    <div id="status"></div>
+    
+    <script>
+        function addStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            statusDiv.appendChild(div);
+        }
+        
+        function clearStatus() {
+            document.getElementById('status').innerHTML = '';
+        }
+        
+        function testEditorReady() {
+            try {
+                const editorWindow = document.getElementById('monacoEditor')?.contentWindow;
+                if (!editorWindow) {
+                    addStatus('❌ Monaco editor iframe not found', 'error');
+                    return;
+                }
+                
+                const hasGetValue = !!editorWindow.getEditorValue;
+                const hasSetValue = !!editorWindow.setEditorValue;
+                const hasSetLanguage = !!editorWindow.setEditorLanguage;
+                
+                addStatus(`🔍 Editor Status:`, 'info');
+                addStatus(`  - getEditorValue: ${hasGetValue ? '✅' : '❌'}`, hasGetValue ? 'success' : 'error');
+                addStatus(`  - setEditorValue: ${hasSetValue ? '✅' : '❌'}`, hasSetValue ? 'success' : 'error');
+                addStatus(`  - setEditorLanguage: ${hasSetLanguage ? '✅' : '❌'}`, hasSetLanguage ? 'success' : 'error');
+                
+                if (hasGetValue && hasSetValue) {
+                    addStatus('✅ Editor is ready for save/load operations', 'success');
+                } else {
+                    addStatus('❌ Editor is not ready', 'error');
+                }
+            } catch (error) {
+                addStatus(`❌ Error testing editor: ${error.message}`, 'error');
+            }
+        }
+        
+        function testSave() {
+            try {
+                if (typeof window.saveCode === 'function') {
+                    addStatus('✅ saveCode function is available', 'success');
+                    window.saveCode();
+                } else {
+                    addStatus('❌ saveCode function not found', 'error');
+                }
+            } catch (error) {
+                addStatus(`❌ Error calling saveCode: ${error.message}`, 'error');
+            }
+        }
+        
+        function testLoad() {
+            try {
+                if (typeof window.loadCode === 'function') {
+                    addStatus('✅ loadCode function is available', 'success');
+                    window.loadCode();
+                } else {
+                    addStatus('❌ loadCode function not found', 'error');
+                }
+            } catch (error) {
+                addStatus(`❌ Error calling loadCode: ${error.message}`, 'error');
+            }
+            }
+        
+        // Auto-test when page loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                addStatus('🔄 Auto-testing editor status...', 'info');
+                testEditorReady();
+            }, 2000);
+        });
+    </script>
+</body>
+</html>

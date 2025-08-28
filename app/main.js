@@ -484,7 +484,12 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
     
     const filePath = filePaths[0];
     const code = fs.readFileSync(filePath, 'utf-8');
-    return { success: true, code, filePath };
+    
+    // Detect language from file extension
+    const fileExt = path.extname(filePath).toLowerCase();
+    const detectedLanguage = Object.keys(extensions).find(key => extensions[key] === fileExt) || language;
+    
+    return { success: true, code, filePath, language: detectedLanguage };
   } catch (err) {
     return { success: false, error: err.message }; 
   }

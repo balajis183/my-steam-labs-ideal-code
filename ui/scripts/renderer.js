@@ -51,33 +51,71 @@ function showTerminal() {
 // Make showTerminal globally available
 window.showTerminal = showTerminal;
 
+// Check if Monaco editor is ready
+function isEditorReady() {
+  const editorWindow = document.getElementById('monacoEditor').contentWindow;
+  return editorWindow && editorWindow.getEditorValue && editorWindow.setEditorValue;
+}
+
+// Wait for editor to be ready
+async function waitForEditor(maxAttempts = 20) {
+  for (let i = 0; i < maxAttempts; i++) {
+    if (isEditorReady()) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return false;
+}
+
 // Get current code from Monaco editor
 function getCurrentCode() {
   const editorWindow = document.getElementById('monacoEditor').contentWindow;
-  console.log('🔍 Editor window:', editorWindow);
-  console.log('🔍 Editor window methods:', Object.getOwnPropertyNames(editorWindow || {}));
   
-  if (editorWindow && editorWindow.getEditorValue) {
-    const code = editorWindow.getEditorValue();
-    console.log('🔍 Retrieved code length:', code ? code.length : 0);
-    console.log('🔍 Code preview:', code ? code.substring(0, 200) : 'No code');
-    return code;
+  if (!editorWindow) {
+    console.log('❌ Editor iframe not found');
+    return '';
   }
   
-  console.log('❌ Could not get code from editor');
+  if (editorWindow.getEditorValue) {
+    try {
+      const code = editorWindow.getEditorValue();
+      console.log('🔍 Retrieved code length:', code ? code.length : 0);
+      if (code && code.trim()) {
+        console.log('🔍 Code preview:', code.substring(0, 200) + (code.length > 200 ? '...' : ''));
+        return code;
+      } else {
+        console.log('⚠️ Editor contains empty or whitespace-only code');
+        return '';
+      }
+    } catch (error) {
+      console.error('❌ Error getting code from editor:', error);
+      return '';
+    }
+  }
+  
+  console.log('❌ Editor not ready - getEditorValue function not available');
   return '';
 }
 
 // Get current language from Monaco editor or last generated language
 function getCurrentLanguage() {
   const editorWindow = document.getElementById('monacoEditor').contentWindow;
+  
   if (editorWindow && editorWindow.getEditorLanguage) {
-    const editorLang = editorWindow.getEditorLanguage();
-    if (editorLang && editorLang !== 'javascript') {
-      return editorLang;
+    try {
+      const editorLang = editorWindow.getEditorLanguage();
+      if (editorLang && editorLang !== 'javascript') {
+        console.log(`🎯 Language detected from editor: ${editorLang}`);
+        return editorLang;
+      }
+    } catch (error) {
+      console.error('❌ Error getting language from editor:', error);
     }
   }
+  
   // Fallback to last generated language
+  console.log(`🎯 Using fallback language: ${lastGeneratedLanguage}`);
   return lastGeneratedLanguage;
 }
 
@@ -731,14 +769,34 @@ function waitForElement(id, callback) {
 // Save Code Function
 async function saveCode() {
   try {
+    // Wait for Monaco editor to be ready
+    const editorWindow = document.getElementById('monacoEditor').contentWindow;
+    if (!editorWindow) {
+      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      return;
+    }
+
+    // Wait for editor to be fully loaded
+    let attempts = 0;
+    while (!editorWindow.getEditorValue && attempts < 10) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+
+    if (!editorWindow.getEditorValue) {
+      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      return;
+    }
+
     const code = getCurrentCode();
     const language = getCurrentLanguage();
     
-    // if (!code || code.trim() === '') {
-    //   alert('No code to save. Please generate some code first.');
-    //   return;
-    // }
+    if (!code || code.trim() === '') {
+      appendTerminalOutput('❌ No code to save. Please generate some code first.');
+      return;
+    }
     
+    appendTerminalOutput(`💾 Saving ${language} code...`);
     const result = await window.electronAPI.saveCode(code, language);
     
     if (result.success) {
@@ -755,15 +813,32 @@ async function saveCode() {
 // Load Code Function
 async function loadCode() {
   try {
+    appendTerminalOutput('⏳ Checking if editor is ready...');
+    
+    // Wait for Monaco editor to be ready
+    if (!await waitForEditor()) {
+      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      return;
+    }
+    
+    appendTerminalOutput('✅ Editor is ready');
+    
+    const editorWindow = document.getElementById('monacoEditor').contentWindow;
     const language = getCurrentLanguage();
+    appendTerminalOutput(`📂 Loading ${language} code...`);
     const result = await window.electronAPI.loadCode(language);
     
     if (result.success) {
       // Set the loaded code in the Monaco editor
-      const editorWindow = document.getElementById('monacoEditor').contentWindow;
-      if (editorWindow && editorWindow.setEditorValue) {
+      if (editorWindow.setEditorValue) {
         editorWindow.setEditorValue(result.code);
+        // Also set the language in the editor
+        if (editorWindow.setEditorLanguage) {
+          editorWindow.setEditorLanguage(result.language || language);
+        }
         appendTerminalOutput(`✅ Code loaded successfully from: ${result.filePath}`);
+        // Update the current language
+        setCurrentLanguage(result.language || language);
       } else {
         appendTerminalOutput(`⚠️ Editor not ready. Please try again.`);
       }
@@ -779,6 +854,30 @@ async function loadCode() {
 // Make functions globally available
 window.saveCode = saveCode;
 window.loadCode = loadCode;
+
+// Debug function to check editor status
+window.debugEditor = function() {
+  const editorWindow = document.getElementById('monacoEditor').contentWindow;
+  console.log('🔍 Editor Debug Info:');
+  console.log('Editor iframe exists:', !!document.getElementById('monacoEditor'));
+  console.log('Editor window exists:', !!editorWindow);
+  if (editorWindow) {
+    console.log('getEditorValue available:', !!editorWindow.getEditorValue);
+    console.log('setEditorValue available:', !!editorWindow.setEditorValue);
+    console.log('setEditorLanguage available:', !!editorWindow.setEditorLanguage);
+    console.log('Editor methods:', Object.getOwnPropertyNames(editorWindow));
+  }
+  
+  appendTerminalOutput('🔍 Editor debug info logged to console');
+};
+
+// Listen for editor ready signal from Monaco iframe
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'editorReady') {
+    console.log('✅ Monaco editor signaled ready');
+    appendTerminalOutput('✅ Monaco editor is ready');
+  }
+});
 
 // Wait for portSelect after navbar loads
 waitForElement('portSelect', () => {
