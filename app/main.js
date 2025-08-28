@@ -259,7 +259,24 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
         }
         console.log('✅ Upload successful');
         safeSend('terminal-output', '✅ Upload successful!');
-        res({ success: true });
+        
+        // Small delay to ensure port stability
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Now execute the uploaded code and capture output
+        safeSend('terminal-output', '🚀 Executing uploaded code...');
+        const execCommand = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('main.py').read())"`;
+        console.log(`Executing: ${execCommand}`);
+        
+        const execResult = await runWithRetries(execCommand, 2, 3000);
+        if (execResult.success) {
+          safeSend('terminal-output', '📋 Code execution output:');
+          safeSend('terminal-output', execResult.stdout || 'No output');
+          res({ success: true, output: execResult.stdout || 'No output' });
+        } else {
+          safeSend('terminal-output', `❌ Code execution failed: ${execResult.error}`);
+          res({ success: false, error: execResult.error });
+        }
       })();
     });
   } catch (err) {
