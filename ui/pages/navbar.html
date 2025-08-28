@@ -19,11 +19,19 @@
     .logo {
       font-weight: bold;
       margin-right: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .logo img {
-      vertical-align: middle;
-      height: 40px;
-      margin-right: 5px;
+      height: 35px;
+      width: auto;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: transform 0.2s ease;
+    }
+    .logo img:hover {
+      transform: scale(1.05);
     }
     .nav-links {
       display: flex;
@@ -111,8 +119,8 @@
 <body>
   <div class="navbar">
     <div class="logo">
-      <img src="../assets/logo.jpg" alt="Logo">
-      MY STEAM LAB
+      <img src="../assets/logo.jpg" alt="My Steam Labs Logo">
+      <span style="font-size: 18px; color: #333;">MY STEAM LAB</span>
     </div>
     <div class="nav-links">
       <button class="active" onclick="alert('File menu clicked')">file</button>
