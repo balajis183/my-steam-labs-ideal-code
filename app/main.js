@@ -516,28 +516,34 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
 
 // ---- Board Status Check ----
 ipcMain.handle('check-board', async () => {
-  return new Promise((resolve, reject) => {
-    // Use full Python path for Windows compatibility
-    const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
-    const python = spawn(pythonPath, [path.join(__dirname, '..', 'status.py')]);
-    let output = '';
+  try {
+    const ports = await SerialPort.list();
+    const identifiers = [
+      'usb', 'uart', 'com', 'serial', 'esp32', 'esp8266',
+      'arduino', 'raspberry', 'micropython', 'circuitpython'
+    ];
 
-    python.stdout.on('data', data => {
-      output += data.toString();
+    const found = ports.some(portInfo => {
+      const haystack = [
+        portInfo.path,
+        portInfo.friendlyName,
+        portInfo.pnpId,
+        portInfo.manufacturer,
+        portInfo.vendorId,
+        portInfo.productId
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return identifiers.some(id => haystack.includes(id));
     });
 
-    python.stderr.on('data', err => {
-      console.error('Python stderr:', err.toString());
-    });
-
-    python.on('close', () => {
-      resolve(output.trim().toLowerCase());
-    });
-
-    python.on('error', err => {
-      reject(new Error(`Python execution failed: ${err.message}`));
-    });
-  });
+    return found ? 'connected' : 'disconnected';
+  } catch (err) {
+    console.error('check-board error:', err);
+    return 'disconnected';
+  }
 });
 
 // ---- Terminal Output Handler ----
