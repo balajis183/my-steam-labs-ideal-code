@@ -1,5 +1,5 @@
 {
-  "name": "gloom-scratch-app",
+  "name": "my-steam-lab",
   "version": "1.0.0",
   "main": "app/main.js",
   "scripts": {
@@ -8,8 +8,8 @@
   },
 
   "build": {
-  "appId": "com.yourcompany.gloomscratchapp",
-  "productName": "Gloom Scratch App",
+  "appId": "com.yourcompany.mysteamlabs",
+  "productName": "My Steam Labs",
   "icon": "ui/assets/logo.jpg",
   "win": {
     "target": "nsis",
