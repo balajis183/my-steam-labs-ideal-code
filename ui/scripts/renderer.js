@@ -727,6 +727,34 @@ function setupBoardStatusCheck() {
   }
 }
 
+// ESP32 connection test
+function setupEsp32ConnectionTest() {
+  const testEsp32Btn = document.getElementById('testEsp32Btn');
+  
+  if (testEsp32Btn) {
+    testEsp32Btn.addEventListener('click', async () => {
+      if (!currentPort) {
+        appendTerminalOutput('❌ No port selected. Please select a port first.');
+        return;
+      }
+      
+      appendTerminalOutput(`🔍 Testing ESP32 connection on ${currentPort}...`);
+      
+      try {
+        const result = await window.electronAPI.testEsp32Connection(currentPort);
+        if (result.success) {
+          appendTerminalOutput('✅ ESP32 connection test successful!');
+          appendTerminalOutput(result.output || 'No output');
+        } else {
+          appendTerminalOutput(`❌ ESP32 connection test failed: ${result.error}`);
+        }
+      } catch (error) {
+        appendTerminalOutput(`❌ ESP32 connection test error: ${error.message}`);
+      }
+    });
+  }
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   console.log('✅ DOM ready, setting up event listeners...');
@@ -736,6 +764,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Setup board status check
   setupBoardStatusCheck();
+  
+  // Setup ESP32 connection test
+  setupEsp32ConnectionTest();
   
   // Initial port refresh
   refreshPorts();
@@ -888,5 +919,10 @@ waitForElement('portSelect', () => {
 // Wait for checkConnectionBtn after navbar loads
 waitForElement('checkConnectionBtn', () => {
   setupBoardStatusCheck();
+});
+
+// Wait for testEsp32Btn after navbar loads
+waitForElement('testEsp32Btn', () => {
+  setupEsp32ConnectionTest();
 });
 

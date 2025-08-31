@@ -13,37 +13,136 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Utility: find Python executable path dynamically
+async function findPythonPath() {
+  const possiblePaths = [
+    'python',
+    'python3',
+    'py',
+    'C:\\Program Files\\Python313\\python.exe',
+    'C:\\Program Files\\Python312\\python.exe',
+    'C:\\Program Files\\Python311\\python.exe',
+    'C:\\Program Files\\Python310\\python.exe',
+    'C:\\Program Files\\Python39\\python.exe',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Local\\Python\\Python312\\python.exe',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Python\\Python310\\python.exe',
+    'C:\\Users\\' + process.env.USERNAME + '\\AppData\\Local\\Programs\\Python\\Python39\\python.exe'
+  ];
+
+  for (const pythonPath of possiblePaths) {
+    try {
+      const result = await new Promise((resolve) => {
+        exec(`"${pythonPath}" --version`, { timeout: 5000 }, (err, stdout, stderr) => {
+          if (!err && stdout) {
+            resolve({ success: true, path: pythonPath, version: stdout.trim() });
+          } else {
+            resolve({ success: false, path: pythonPath, error: err?.message || stderr });
+          }
+        });
+      });
+      
+      if (result.success) {
+        console.log(`✅ Found Python: ${result.path} - ${result.version}`);
+        return result.path;
+      }
+    } catch (error) {
+      console.log(`❌ Python path ${pythonPath} failed: ${error.message}`);
+    }
+  }
+  
+  throw new Error('No Python installation found. Please install Python and ensure it\'s in your PATH.');
+}
+
+// Utility: check and install mpremote if needed
+async function ensureMpremoteInstalled(pythonPath) {
+  try {
+    console.log('🔍 Checking if mpremote is installed...');
+    
+    const result = await new Promise((resolve) => {
+      exec(`"${pythonPath}" -m mpremote --version`, { timeout: 10000 }, (err, stdout, stderr) => {
+        if (!err && stdout) {
+          resolve({ success: true, version: stdout.trim() });
+        } else {
+          resolve({ success: false, error: err?.message || stderr });
+        }
+      });
+    });
+    
+    if (result.success) {
+      console.log(`✅ mpremote is installed: ${result.version}`);
+      return true;
+    }
+    
+    console.log('📦 mpremote not found, installing...');
+    safeSend('terminal-output', '📦 Installing mpremote...');
+    
+    const installResult = await new Promise((resolve) => {
+      exec(`"${pythonPath}" -m pip install mpremote`, { timeout: 60000 }, (err, stdout, stderr) => {
+        if (!err) {
+          resolve({ success: true, output: stdout });
+        } else {
+          resolve({ success: false, error: err?.message || stderr });
+        }
+      });
+    });
+    
+    if (installResult.success) {
+      console.log('✅ mpremote installed successfully');
+      safeSend('terminal-output', '✅ mpremote installed successfully');
+      return true;
+    } else {
+      console.error('❌ Failed to install mpremote:', installResult.error);
+      safeSend('terminal-output', `❌ Failed to install mpremote: ${installResult.error}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error checking/installing mpremote:', error.message);
+    safeSend('terminal-output', `❌ Error checking/installing mpremote: ${error.message}`);
+    return false;
+  }
+}
+
 // Utility: best-effort COM port release on Windows and wait for readiness
 async function releaseComPortIfNeeded(portPath) {
   try {
+    console.log(`🔄 Releasing port ${portPath}...`);
+    
     // Kill potential conflicting processes (Python/mpremote) silently
-    exec('taskkill /f /im "python.exe" 2>nul', () => {});
-    exec('taskkill /f /im "mpremote.exe" 2>nul', () => {});
-  } catch (_) {}
+    if (os.platform() === 'win32') {
+      exec('taskkill /f /im "python.exe" 2>nul', () => {});
+      exec('taskkill /f /im "mpremote.exe" 2>nul', () => {});
+    }
 
-  // Close our open handle if any
-  try {
-    if (currentPort) {
-      if (currentPort.isOpen) {
-        await new Promise(res => currentPort.close(() => res()));
-      }
+    // Close our open handle if any
+    if (currentPort && currentPort.isOpen) {
+      console.log('🔄 Closing current port...');
+      await new Promise(res => currentPort.close(() => res()));
       currentPort.destroy();
       currentPort = null;
     }
-  } catch (_) {}
 
-  // Ask Windows to reset the line settings and wait for completion
-  await new Promise(resolve => {
-    exec(`mode ${portPath}: BAUD=115200 PARITY=N DATA=8 STOP=1`, () => resolve());
-  });
+    // Ask Windows to reset the line settings and wait for completion
+    if (os.platform() === 'win32') {
+      await new Promise(resolve => {
+        exec(`mode ${portPath}: BAUD=115200 PARITY=N DATA=8 STOP=1`, () => resolve());
+      });
+    }
 
-  // Give the OS time to actually free the handle
-  await delay(2500);
+    // Give the OS time to actually free the handle
+    await delay(2000);
+    console.log(`✅ Port ${portPath} released successfully`);
+  } catch (error) {
+    console.error(`❌ Error releasing port ${portPath}:`, error.message);
+  }
 }
 
 // Utility: run a shell command with retries and backoff
-async function runWithRetries(command, attempts = 3, backoffMs = 1500, timeoutMs = 20000) {
+async function runWithRetries(command, attempts = 3, backoffMs = 1500, timeoutMs = 30000) {
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    console.log(`🔄 Attempt ${attempt}/${attempts}: ${command}`);
+    
     const result = await new Promise(resolve => {
       exec(command, { timeout: timeoutMs }, (err, stdout, stderr) => {
         resolve({ err, stdout, stderr });
@@ -51,10 +150,14 @@ async function runWithRetries(command, attempts = 3, backoffMs = 1500, timeoutMs
     });
 
     if (!result.err) {
+      console.log(`✅ Command succeeded on attempt ${attempt}`);
       return { success: true, stdout: result.stdout };
     }
 
+    console.log(`❌ Attempt ${attempt} failed: ${result.err.message || result.stderr}`);
+    
     if (attempt < attempts) {
+      console.log(`⏳ Waiting ${backoffMs * attempt}ms before retry...`);
       await delay(backoffMs * attempt);
     } else {
       return { success: false, error: result.stderr || result.err?.message || 'Unknown error' };
@@ -153,17 +256,21 @@ ipcMain.handle('compile-python', async (_e, code) => {
     fs.writeFileSync(pyPath, code, 'utf-8');
     
     // For MicroPython, we'll just validate the syntax
-    return await new Promise(res => {
-      // Use full path to Python for Windows compatibility
-      const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
-      
-      exec(`"${pythonPath}" -m py_compile "${pyPath}"`, (err, out, errOut) => {
-        if (err) {
-          res({ success: false, error: `Python compilation failed: ${errOut || out || err.message}` });
-        } else {
-          res({ success: true, output: 'Python syntax validation successful', compiledPath: pyPath });
-        }
-      });
+    return await new Promise(async (res) => {
+      try {
+        // Find Python path dynamically
+        const pythonPath = await findPythonPath();
+        
+        exec(`"${pythonPath}" -m py_compile "${pyPath}"`, (err, out, errOut) => {
+          if (err) {
+            res({ success: false, error: `Python compilation failed: ${errOut || out || err.message}` });
+          } else {
+            res({ success: true, output: 'Python syntax validation successful', compiledPath: pyPath });
+          }
+        });
+      } catch (pythonError) {
+        res({ success: false, error: `Python not found: ${pythonError.message}` });
+      }
     });
   } catch (err) { 
     return { success: false, error: err.message }; 
@@ -234,50 +341,62 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
     const pyPath = path.join(tmpDir, 'main.py');
     fs.writeFileSync(pyPath, code, 'utf-8');
     
-    return await new Promise(res => {
-      // Use full Python path to run mpremote
-      const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
-      
-      // Upload with enhanced error handling
-      safeSend('terminal-output', '🚀 Uploading code to ESP32...');
-      
-      const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath}" :main.py`;
-      console.log(`Executing: ${uploadCommand}`);
-      
-      (async () => {
-        const firstTry = await runWithRetries(uploadCommand, 2, 1500);
-        if (!firstTry.success) {
-          console.log('🔁 Upload retry after aggressive port release...');
-          await releaseComPortIfNeeded(port);
-          const secondTry = await runWithRetries(uploadCommand, 2, 2000);
-          if (!secondTry.success) {
-            console.error('❌ Upload failed:', firstTry.error || secondTry.error);
-            safeSend('terminal-output', `❌ Upload failed: ${firstTry.error || secondTry.error}`);
-            res({ success: false, error: firstTry.error || secondTry.error });
-            return;
+    return await new Promise(async (res) => {
+      try {
+        // Find Python path dynamically
+        const pythonPath = await findPythonPath();
+        
+        // Ensure mpremote is installed
+        const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
+        if (!mpremoteReady) {
+          res({ success: false, error: 'mpremote installation failed' });
+          return;
+        }
+        
+        // Upload with enhanced error handling
+        safeSend('terminal-output', '🚀 Uploading code to ESP32...');
+        
+        const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath}" :main.py`;
+        console.log(`Executing: ${uploadCommand}`);
+        
+        (async () => {
+          const firstTry = await runWithRetries(uploadCommand, 2, 1500);
+          if (!firstTry.success) {
+            console.log('🔁 Upload retry after aggressive port release...');
+            await releaseComPortIfNeeded(port);
+            const secondTry = await runWithRetries(uploadCommand, 2, 2000);
+            if (!secondTry.success) {
+              console.error('❌ Upload failed:', firstTry.error || secondTry.error);
+              safeSend('terminal-output', `❌ Upload failed: ${firstTry.error || secondTry.error}`);
+              res({ success: false, error: firstTry.error || secondTry.error });
+              return;
+            }
           }
-        }
-        console.log('✅ Upload successful');
-        safeSend('terminal-output', '✅ Upload successful!');
-        
-        // Small delay to ensure port stability
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Now execute the uploaded code and capture output
-        safeSend('terminal-output', '🚀 Executing uploaded code...');
-        const execCommand = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('main.py').read())"`;
-        console.log(`Executing: ${execCommand}`);
-        
-        const execResult = await runWithRetries(execCommand, 2, 3000);
-        if (execResult.success) {
-          safeSend('terminal-output', '📋 Code execution output:');
-          safeSend('terminal-output', execResult.stdout || 'No output');
-          res({ success: true, output: execResult.stdout || 'No output' });
-        } else {
-          safeSend('terminal-output', `❌ Code execution failed: ${execResult.error}`);
-          res({ success: false, error: execResult.error });
-        }
-      })();
+          console.log('✅ Upload successful');
+          safeSend('terminal-output', '✅ Upload successful!');
+          
+          // Small delay to ensure port stability
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Now execute the uploaded code and capture output
+          safeSend('terminal-output', '🚀 Executing uploaded code...');
+          const execCommand = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('main.py').read())"`;
+          console.log(`Executing: ${execCommand}`);
+          
+          const execResult = await runWithRetries(execCommand, 2, 3000);
+          if (execResult.success) {
+            safeSend('terminal-output', '📋 Code execution output:');
+            safeSend('terminal-output', execResult.stdout || 'No output');
+            res({ success: true, output: execResult.stdout || 'No output' });
+          } else {
+            safeSend('terminal-output', `❌ Code execution failed: ${execResult.error}`);
+            res({ success: false, error: execResult.error });
+          }
+        })();
+      } catch (pythonError) {
+        safeSend('terminal-output', `❌ Python not found: ${pythonError.message}`);
+        res({ success: false, error: `Python not found: ${pythonError.message}` });
+      }
     });
   } catch (err) {
     console.error('❌ Upload error:', err.message);
@@ -354,8 +473,15 @@ ipcMain.handle('run-python', async (_e, code, port) => {
         console.log('🔄 Preparing port for run...');
         await releaseComPortIfNeeded(port);
         
-        // Run on hardware via mpremote using full Python path
-        const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+        // Run on hardware via mpremote using dynamic Python path
+        const pythonPath = await findPythonPath();
+        
+        // Ensure mpremote is installed
+        const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
+        if (!mpremoteReady) {
+          resolve('Hardware execution failed: mpremote installation failed');
+          return;
+        }
         
         console.log(`🚀 Executing: "${pythonPath}" -m mpremote connect ${port} run "${pyPath}"`);
         
@@ -384,7 +510,7 @@ ipcMain.handle('run-python', async (_e, code, port) => {
         })();
       } else {
         // Run locally with Python using full path
-        const pythonPath = 'C:\\Program Files\\Python313\\python.exe';
+        const pythonPath = await findPythonPath();
         
         exec(`"${pythonPath}" "${pyPath}"`, (err, stdout, stderr) => {
           if (err) {
@@ -541,6 +667,41 @@ ipcMain.handle('check-board', async () => {
   } catch (err) {
     console.error('check-board error:', err);
     return 'disconnected';
+  }
+});
+
+// ---- ESP32 Connection Test ----
+ipcMain.handle('test-esp32-connection', async (_e, port) => {
+  try {
+    console.log(`🔍 Testing ESP32 connection on ${port}...`);
+    safeSend('terminal-output', `🔍 Testing ESP32 connection on ${port}...`);
+    
+    // Find Python path
+    const pythonPath = await findPythonPath();
+    
+    // Ensure mpremote is installed
+    const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
+    if (!mpremoteReady) {
+      return { success: false, error: 'mpremote installation failed' };
+    }
+    
+    // Test basic connection
+    const testCommand = `"${pythonPath}" -m mpremote connect ${port} exec "print('ESP32 Connection Test')"`;
+    console.log(`Executing: ${testCommand}`);
+    
+    const result = await runWithRetries(testCommand, 2, 5000);
+    if (result.success) {
+      console.log('✅ ESP32 connection test successful');
+      safeSend('terminal-output', '✅ ESP32 connection test successful');
+      return { success: true, output: result.stdout };
+    } else {
+      console.error('❌ ESP32 connection test failed:', result.error);
+      safeSend('terminal-output', `❌ ESP32 connection test failed: ${result.error}`);
+      return { success: false, error: result.error };
+    }
+  } catch (err) {
+    console.error('❌ ESP32 connection test error:', err.message);
+    return { success: false, error: err.message };
   }
 });
 

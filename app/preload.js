@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Board Status
   checkBoard: () => ipcRenderer.invoke('check-board'),
   
+  // ESP32 Connection Test
+  testEsp32Connection: (port) => ipcRenderer.invoke('test-esp32-connection', port),
+  
   // Terminal Output
   terminalOutput: (message) => ipcRenderer.invoke('terminal-output', message),
   
