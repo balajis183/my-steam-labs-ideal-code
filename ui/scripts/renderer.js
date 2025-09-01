@@ -125,11 +125,12 @@ function setCurrentLanguage(language) {
   console.log(`🎯 Language set to: ${language}`);
 }
 
-// Helper function to detect if Python code needs hardware
+// FIXED: Enhanced hardware detection for Python
 function needsHardwarePort(code) {
   const hardwareModules = [
     'import machine',
     'from machine',
+    'import os',
     'os.uname()',
     'machine.freq()',
     'machine.unique_id()',
@@ -141,19 +142,58 @@ function needsHardwarePort(code) {
     'machine.UART',
     'machine.Timer',
     'machine.RTC',
-    'machine.WDT'
+    'machine.WDT',
+    'machine.reset',
+    'machine.soft_reset',
+    'micropython',
+    'import micropython',
+    'import esp32',
+    'from esp32',
+    'import esp',
+    'from esp',
+    'import network',
+    'network.WLAN',
+    'import bluetooth',
+    'from bluetooth',
+    'import time',
+    'time.sleep_ms',
+    'time.ticks_ms',
+    'time.ticks_us',
+    'gc.collect',
+    'import gc'
   ];
   
-  return hardwareModules.some(module => code.includes(module));
+  // More comprehensive check
+  const codeUpper = code.toUpperCase();
+  const hasHardwareImports = hardwareModules.some(module => {
+    return code.includes(module) || codeUpper.includes(module.toUpperCase());
+  });
+  
+  // Also check for specific MicroPython patterns
+  const micropythonPatterns = [
+    /from\s+machine\s+import/i,
+    /import\s+machine/i,
+    /machine\./i,
+    /Pin\(/i,
+    /ADC\(/i,
+    /PWM\(/i,
+    /os\.uname\(\)/i,
+    /unique_id\(\)/i,
+    /freq\(\)/i
+  ];
+  
+  const hasPatterns = micropythonPatterns.some(pattern => pattern.test(code));
+  
+  return hasHardwareImports || hasPatterns;
 }
 
-// Helper function to detect if C++ code needs hardware
+// FIXED: Enhanced hardware detection for C++
 function needsHardwarePortCpp(code) {
   const hardwareModules = [
     '#include <Arduino.h>',
-    '#include <ESP32.h>',
     '#include <WiFi.h>',
-    '#include <BluetoothSerial.h>',
+    '#include <ESP32',
+    '#include <esp32',
     'Serial.begin',
     'pinMode',
     'digitalWrite',
@@ -163,10 +203,41 @@ function needsHardwarePortCpp(code) {
     'WiFi.begin',
     'BluetoothSerial',
     'ESP32',
-    'Arduino.h'
+    'Arduino.h',
+    'setup()',
+    'loop()',
+    'void setup',
+    'void loop',
+    'BUILTIN_LED',
+    'LED_BUILTIN',
+    'Wire.begin',
+    'SPI.begin',
+    'Serial.print',
+    'delay(',
+    'delayMicroseconds',
+    'millis()',
+    'micros()'
   ];
   
-  return hardwareModules.some(module => code.includes(module));
+  // Check for Arduino/ESP32 specific patterns
+  const arduinoPatterns = [
+    /#include\s*<.*\.h>/i,
+    /void\s+setup\s*\(/i,
+    /void\s+loop\s*\(/i,
+    /Serial\./i,
+    /digitalWrite\s*\(/i,
+    /digitalRead\s*\(/i,
+    /analogRead\s*\(/i,
+    /analogWrite\s*\(/i,
+    /pinMode\s*\(/i,
+    /WiFi\./i,
+    /delay\s*\(/i
+  ];
+  
+  const hasHardwareIncludes = hardwareModules.some(module => code.includes(module));
+  const hasArduinoPatterns = arduinoPatterns.some(pattern => pattern.test(code));
+  
+  return hasHardwareIncludes || hasArduinoPatterns;
 }
 
 // Auto-detect language and hardware requirements
@@ -197,7 +268,7 @@ async function autoDetectLanguage() {
     detectedLanguage = 'javascript';
     needsHardware = false;
     hardwareType = 'Node.js';
-  } else if (code.includes('#include <stdio.h>') || code.includes('printf(')) {
+  } else if (code.includes('#include ') || code.includes('printf(')) {
     detectedLanguage = 'c';
     needsHardware = false;
     hardwareType = 'Standard C';
@@ -242,17 +313,17 @@ function getSelectedLanguage(code) {
   return detectLanguageFromCode(code);
 }
 
-// Enhanced language detection function
+// FIXED: Enhanced language detection function
 function detectLanguageFromCode(code) {
   if (!code || !code.trim()) {
     return lastGeneratedLanguage || 'python';
   }
   
   // C++ detection (more comprehensive)
-  if (code.includes('#include') || 
-      code.includes('int main()') || 
+  if (code.includes('#include') ||
+      code.includes('int main()') ||
       code.includes('void main()') ||
-      code.includes('void setup()') || 
+      code.includes('void setup()') ||
       code.includes('void loop()') ||
       code.includes('Arduino.h') ||
       code.includes('ESP32') ||
@@ -270,13 +341,17 @@ function detectLanguageFromCode(code) {
       code.includes('cout <<') ||
       code.includes('cin >>') ||
       code.includes('return 0;') ||
-      code.includes('using namespace')) {
+      code.includes('using namespace') ||
+      code.includes('Serial.') ||
+      code.includes('pinMode') ||
+      code.includes('digitalWrite') ||
+      code.includes('digitalRead')) {
     return 'cpp';
   }
   
   // C detection
-  if (code.includes('#include <stdio.h>') || 
-      code.includes('printf(') || 
+  if (code.includes('#include <stdio.h>') ||
+      code.includes('printf(') ||
       code.includes('scanf(') ||
       code.includes('main()') ||
       code.includes('malloc(') ||
@@ -284,22 +359,27 @@ function detectLanguageFromCode(code) {
     return 'c';
   }
   
-  // Python detection
-  if (code.includes('import ') || 
-      code.includes('print(') || 
+  // Python detection (enhanced for MicroPython)
+  if (code.includes('import ') ||
+      code.includes('print(') ||
       code.includes('def ') ||
       code.includes('if __name__') ||
       code.includes('class ') ||
       code.includes('try:') ||
       code.includes('except:') ||
-      code.includes('with open(')) {
+      code.includes('with open(') ||
+      code.includes('from machine') ||
+      code.includes('import machine') ||
+      code.includes('machine.') ||
+      code.includes('os.uname') ||
+      code.includes('micropython')) {
     return 'python';
   }
   
   // JavaScript detection
-  if (code.includes('function') || 
-      code.includes('console.log') || 
-      code.includes('var ') || 
+  if (code.includes('function') ||
+      code.includes('console.log') ||
+      code.includes('var ') ||
       code.includes('let ') ||
       code.includes('const ') ||
       code.includes('=>') ||
@@ -332,7 +412,7 @@ function autoDetectLanguageFromCode() {
   }
 }
 
-// Update compileCode, uploadCode, runCode to use getSelectedLanguage
+// FIXED: Enhanced compile function with better error handling
 async function compileCode() {
   const code = getCurrentCode();
   // Auto-detect language first
@@ -391,16 +471,19 @@ async function compileCode() {
   }
 }
 
+// FIXED: Enhanced upload function with better hardware validation
 async function uploadCode() {
   if (isUploading) {
     appendTerminalOutput('⏳ Upload already in progress...');
     return;
   }
+  
   isUploading = true;
   const runBtn = document.getElementById('runBtn');
   const uploadBtn = document.getElementById('uploadBtn');
   if (uploadBtn) uploadBtn.disabled = true;
   if (runBtn) runBtn.disabled = true;
+  
   const code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
@@ -409,21 +492,30 @@ async function uploadCode() {
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to upload. Please generate some code first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
   }
   
-  // Check if Python code needs hardware for upload
+  // FIXED: Better hardware validation
   if (language === 'python') {
     const needsHardware = needsHardwarePort(code);
     
     if (needsHardware && !currentPort) {
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This code uses hardware-specific modules and needs to be uploaded to hardware.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
       appendTerminalOutput('💡 This is standard Python code. Use "Run" instead of "Upload" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (language === 'cpp') {
@@ -432,16 +524,25 @@ async function uploadCode() {
     if (needsHardware && !currentPort) {
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32) and needs to be uploaded to hardware.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
       appendTerminalOutput('💡 This is standard C++ code. Use "Run" instead of "Upload" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (!currentPort) {
     // For other languages, still require port
     appendTerminalOutput('❌ No port selected. Please select a port first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
   }
   
@@ -476,24 +577,26 @@ async function uploadCode() {
     }
   } catch (error) {
     appendTerminalOutput(`❌ Upload error: ${error.message}`);
-  }
-  finally {
+  } finally {
     isUploading = false;
     if (uploadBtn) uploadBtn.disabled = false;
     if (runBtn) runBtn.disabled = false;
   }
 }
 
+// FIXED: Enhanced run function
 async function runCode() {
   if (isRunning) {
     appendTerminalOutput('⏳ A run is already in progress...');
     return;
   }
+  
   isRunning = true;
   const runBtn = document.getElementById('runBtn');
   const uploadBtn = document.getElementById('uploadBtn');
   if (runBtn) runBtn.disabled = true;
   if (uploadBtn) uploadBtn.disabled = true;
+  
   const code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
@@ -504,10 +607,13 @@ async function runCode() {
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to run. Please generate some code first.');
+    isRunning = false;
+    if (runBtn) runBtn.disabled = false;
+    if (uploadBtn) uploadBtn.disabled = false;
     return;
   }
   
-  // Check if Python code needs hardware (contains hardware-specific imports/modules)
+  // FIXED: Better hardware validation for run
   if (language === 'python') {
     const needsHardware = needsHardwarePort(code);
     
@@ -515,6 +621,9 @@ async function runCode() {
       console.log('❌ Port validation failed: Python code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This code uses hardware-specific modules (machine, os.uname, etc.)');
+      isRunning = false;
+      if (runBtn) runBtn.disabled = false;
+      if (uploadBtn) uploadBtn.disabled = false;
       return;
     }
     
@@ -530,6 +639,9 @@ async function runCode() {
       console.log('❌ Port validation failed: C++ code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32)');
+      isRunning = false;
+      if (runBtn) runBtn.disabled = false;
+      if (uploadBtn) uploadBtn.disabled = false;
       return;
     }
     
@@ -566,8 +678,7 @@ async function runCode() {
     appendTerminalOutput(result);
   } catch (error) {
     appendTerminalOutput(`❌ Execution error: ${error.message}`);
-  }
-  finally {
+  } finally {
     isRunning = false;
     if (runBtn) runBtn.disabled = false;
     if (uploadBtn) uploadBtn.disabled = false;
@@ -925,4 +1036,3 @@ waitForElement('checkConnectionBtn', () => {
 waitForElement('testEsp32Btn', () => {
   setupEsp32ConnectionTest();
 });
-
