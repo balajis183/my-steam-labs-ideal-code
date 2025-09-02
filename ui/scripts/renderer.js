@@ -144,7 +144,14 @@ function needsHardwarePort(code) {
     'machine.WDT'
   ];
   
-  return hardwareModules.some(module => code.includes(module));
+  const hasHardware = hardwareModules.some(module => code.includes(module));
+  console.log(`🔍 Hardware detection for Python code:`, {
+    code: code.substring(0, 200) + (code.length > 200 ? '...' : ''),
+    hardwareModules: hardwareModules.filter(module => code.includes(module)),
+    needsHardware: hasHardware
+  });
+  
+  return hasHardware;
 }
 
 // Helper function to detect if C++ code needs hardware
@@ -520,8 +527,10 @@ async function runCode() {
     
     if (needsHardware) {
       console.log('✅ Python code uses hardware modules, port validation passed');
+      appendTerminalOutput('🔧 Hardware execution mode: Code will run on ESP32');
     } else {
       console.log('✅ Standard Python code, will run locally');
+      appendTerminalOutput('💻 Local execution mode: Code will run on your computer');
     }
   } else if (language === 'cpp') {
     const needsHardware = needsHardwarePortCpp(code);
@@ -535,8 +544,10 @@ async function runCode() {
     
     if (needsHardware) {
       console.log('✅ C++ code uses hardware modules, port validation passed');
+      appendTerminalOutput('🔧 Hardware execution mode: Code will run on ESP32/Arduino');
     } else {
       console.log('✅ Standard C++ code, will run locally');
+      appendTerminalOutput('💻 Local execution mode: Code will run on your computer');
     }
   }
   
@@ -546,7 +557,16 @@ async function runCode() {
     let result;
     switch (language) {
       case 'python':
-        result = await window.electronAPI.runPython(code, currentPort);
+        // Only pass port if code actually needs hardware
+        const needsHardware = needsHardwarePort(code);
+        const portToUse = needsHardware ? currentPort : null;
+        console.log(`🎯 Python execution: needsHardware=${needsHardware}, portToUse=${portToUse}`);
+        if (needsHardware) {
+          appendTerminalOutput(`🔌 Using hardware port: ${portToUse}`);
+        } else {
+          appendTerminalOutput(`💻 Running locally (no port needed)`);
+        }
+        result = await window.electronAPI.runPython(code, portToUse);
         break;
       case 'javascript':
         result = await window.electronAPI.runJavaScript(code);

@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ESP32 Connection Test
   testEsp32Connection: (port) => ipcRenderer.invoke('test-esp32-connection', port),
   
+  // MicroPython Installation
+  installMicroPython: (port) => ipcRenderer.invoke('install-micropython', port),
+  
   // Terminal Output
   terminalOutput: (message) => ipcRenderer.invoke('terminal-output', message),
   
