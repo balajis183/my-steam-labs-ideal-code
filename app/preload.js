@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ESP32 Connection Test
   testEsp32Connection: (port) => ipcRenderer.invoke('test-esp32-connection', port),
   
+  // Serial Monitor: Send data
+  sendSerialData: (port, data) => ipcRenderer.invoke('send-serial-data', port, data),
+  
   // MicroPython Installation
   installMicroPython: (port) => ipcRenderer.invoke('install-micropython', port),
   

@@ -144,10 +144,51 @@ function needsHardwarePort(code) {
     'machine.WDT'
   ];
   
-  const hasHardware = hardwareModules.some(module => code.includes(module));
+  // Custom hardware functions from Blockly generators
+  const customHardwareFunctions = [
+    'set_pin_mode',
+    'set_pin(',
+    'read_pin(',
+    'read_analog_pin',
+    'write_analog_pin',
+    'set_motor',
+    'set_servo',
+    'set_motor_speed',
+    'read_ldr',
+    'read_ir',
+    'read_temperature',
+    'read_ultrasonic',
+    'read_touch',
+    'read_color',
+    'read_joystick',
+    'oled_display',
+    'show_on_oled',
+    'display_variable_on_oled',
+    'display_char_on_oled',
+    'blink_text_on_oled',
+    'scroll_text_on_oled',
+    'wifi_connect',
+    'wifi_send',
+    'wifi_receive',
+    'bluetooth_setup',
+    'bluetooth_send',
+    'bluetooth_available',
+    'bluetooth_read'
+  ];
+  
+  // Check for standard hardware modules
+  const hasStandardHardware = hardwareModules.some(module => code.includes(module));
+  
+  // Check for custom hardware functions
+  const hasCustomHardware = customHardwareFunctions.some(func => code.includes(func));
+  
+  const hasHardware = hasStandardHardware || hasCustomHardware;
+  
   console.log(`🔍 Hardware detection for Python code:`, {
     code: code.substring(0, 200) + (code.length > 200 ? '...' : ''),
-    hardwareModules: hardwareModules.filter(module => code.includes(module)),
+    hasStandardHardware,
+    hasCustomHardware,
+    detectedFunctions: customHardwareFunctions.filter(func => code.includes(func)),
     needsHardware: hasHardware
   });
   
@@ -416,7 +457,33 @@ async function uploadCode() {
   
   if (!code.trim()) {
     appendTerminalOutput('❌ No code to upload. Please generate some code first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
+  }
+  
+  // For Python: Compile first before uploading
+  if (language === 'python') {
+    appendTerminalOutput('🔄 Compiling Python code before upload...');
+    try {
+      const compileResult = await window.electronAPI.compilePython(code);
+      if (!compileResult.success) {
+        appendTerminalOutput('❌ Compilation failed. Please fix errors before uploading.');
+        appendTerminalOutput(compileResult.error);
+        isUploading = false;
+        if (uploadBtn) uploadBtn.disabled = false;
+        if (runBtn) runBtn.disabled = false;
+        return;
+      }
+      appendTerminalOutput('✅ Compilation successful. Proceeding with upload...');
+    } catch (compileError) {
+      appendTerminalOutput(`❌ Compilation error: ${compileError.message}`);
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
+      return;
+    }
   }
   
   // Check if Python code needs hardware for upload
@@ -426,11 +493,17 @@ async function uploadCode() {
     if (needsHardware && !currentPort) {
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This code uses hardware-specific modules and needs to be uploaded to hardware.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
       appendTerminalOutput('💡 This is standard Python code. Use "Run" instead of "Upload" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (language === 'cpp') {
@@ -439,16 +512,25 @@ async function uploadCode() {
     if (needsHardware && !currentPort) {
       appendTerminalOutput('❌ No port selected. Please select a port first.');
       appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32) and needs to be uploaded to hardware.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
       appendTerminalOutput('💡 This is standard C++ code. Use "Run" instead of "Upload" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (!currentPort) {
     // For other languages, still require port
     appendTerminalOutput('❌ No port selected. Please select a port first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
   }
   
@@ -471,6 +553,9 @@ async function uploadCode() {
         break;
       default:
         appendTerminalOutput(`❌ Unsupported language for upload: ${language}`);
+        isUploading = false;
+        if (uploadBtn) uploadBtn.disabled = false;
+        if (runBtn) runBtn.disabled = false;
         return;
     }
     
@@ -629,7 +714,7 @@ window.testLanguageDetection = function() {
   console.log('📋 Language dropdown updated to:', detected);
 };
 
-// Serial port management
+// Serial port management - Enhanced COM port detection
 async function refreshPorts() {
   const portSelect = document.getElementById('portSelect');
   if (!portSelect) {
@@ -641,6 +726,9 @@ async function refreshPorts() {
   const ports = await window.electronAPI.listSerialPorts();
   console.log('🔌 Ports found:', ports);
 
+  // Store currently selected port
+  const currentSelection = portSelect.value;
+  
   portSelect.innerHTML = '';
   
   // Add default "Select Port" option
@@ -660,10 +748,21 @@ async function refreshPorts() {
     ports.forEach(port => {
       const option = document.createElement('option');
       option.value = port.path;
-      option.text = `${port.path} (${port.manufacturer || 'Unknown'})`;
+      // Enhanced display format: COM3 (ESP32 - Silicon Labs)
+      const displayName = port.manufacturer 
+        ? `${port.path} (${port.manufacturer})`
+        : port.friendlyName 
+        ? `${port.path} (${port.friendlyName})`
+        : `${port.path}`;
+      option.text = displayName;
       portSelect.appendChild(option);
-      console.log(`  - ${port.path} (${port.manufacturer || 'Unknown'})`);
+      console.log(`  - ${port.path} (${port.manufacturer || port.friendlyName || 'Unknown'})`);
     });
+    
+    // Restore previous selection if it still exists
+    if (currentSelection && ports.some(p => p.path === currentSelection)) {
+      portSelect.value = currentSelection;
+    }
   }
 }
 
@@ -694,10 +793,64 @@ async function selectPort(portPath, silent = false) {
   }
 }
 
-// Event listeners for serial data
+// Event listeners for serial data - Enhanced Serial Monitor
 window.electronAPI.onSerialData((data) => {
-  appendTerminalOutput(`📡 Serial: ${data}`);
+  // Display serial data in terminal (Serial Monitor)
+  appendTerminalOutput(data);
+  
+  // Auto-scroll to bottom
+  const terminalOutput = document.getElementById('terminal-output');
+  if (terminalOutput) {
+    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  }
 });
+
+// Serial Monitor: Send data to connected port
+async function sendSerialData(data) {
+  if (!currentPort) {
+    appendTerminalOutput('❌ No port selected. Please select a port first.');
+    return;
+  }
+  
+  try {
+    // Send data via serial port
+    // Note: This requires a new IPC handler in main.js
+    appendTerminalOutput(`📤 Sending: ${data}`);
+    // The actual sending will be handled by the main process
+    // For now, we'll use mpremote to send data
+    const result = await window.electronAPI.sendSerialData(currentPort, data);
+    if (result && result.success) {
+      appendTerminalOutput('✅ Data sent successfully');
+    } else {
+      appendTerminalOutput(`❌ Failed to send data: ${result?.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    appendTerminalOutput(`❌ Error sending serial data: ${error.message}`);
+  }
+}
+
+// Make sendSerialData globally available
+window.sendSerialData = sendSerialData;
+
+// Serial Monitor: Send input from text field
+async function sendSerialInput() {
+  const inputField = document.getElementById('serial-input');
+  if (!inputField) return;
+  
+  const data = inputField.value.trim();
+  if (!data) return;
+  
+  if (!currentPort) {
+    appendTerminalOutput('❌ No port selected. Please select a port first.');
+    return;
+  }
+  
+  await sendSerialData(data);
+  inputField.value = ''; // Clear input field
+}
+
+// Make sendSerialInput globally available
+window.sendSerialInput = sendSerialInput;
 
 window.electronAPI.onTerminalOutput((data) => {
   appendTerminalOutput(data);
@@ -720,31 +873,45 @@ function setupPortSelection() {
   }
 }
 
-// Board status check
+// Board status check with auto-refresh
 function setupBoardStatusCheck() {
   const checkConnectionBtn = document.getElementById('checkConnectionBtn');
   const statusIndicator = document.getElementById('connection-status');
   
-  if (checkConnectionBtn && statusIndicator) {
-    checkConnectionBtn.addEventListener('click', async () => {
-      statusIndicator.style.backgroundColor = 'grey';
-      try {
-        const status = await window.electronAPI.checkBoard();
-        console.log('🟡 Board status:', status);
-        
-        if (status === 'connected') {
-          statusIndicator.style.backgroundColor = 'green';
-        } else if (status === 'disconnected') {
-          statusIndicator.style.backgroundColor = 'red';
-        } else {
-          statusIndicator.style.backgroundColor = 'grey';
-        }
-      } catch (error) {
-        console.error('❌ Board status check failed:', error);
+  // Function to update status indicator
+  async function updateBoardStatus() {
+    if (!statusIndicator) return;
+    
+    try {
+      const status = await window.electronAPI.checkBoard();
+      console.log('🟡 Board status:', status);
+      
+      if (status === 'connected') {
+        statusIndicator.style.backgroundColor = 'green';
+        statusIndicator.title = 'Board Connected';
+      } else if (status === 'disconnected') {
+        statusIndicator.style.backgroundColor = 'red';
+        statusIndicator.title = 'Board Disconnected';
+      } else {
         statusIndicator.style.backgroundColor = 'grey';
+        statusIndicator.title = 'Status Unknown';
       }
-    });
+    } catch (error) {
+      console.error('❌ Board status check failed:', error);
+      statusIndicator.style.backgroundColor = 'grey';
+      statusIndicator.title = 'Status Check Failed';
+    }
   }
+  
+  if (checkConnectionBtn) {
+    checkConnectionBtn.addEventListener('click', updateBoardStatus);
+  }
+  
+  // Auto-refresh status every 5 seconds
+  setInterval(updateBoardStatus, 5000);
+  
+  // Initial status check
+  updateBoardStatus();
 }
 
 // ESP32 connection test

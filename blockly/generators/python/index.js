@@ -11,22 +11,24 @@ if (!Blockly.Python.forBlock) {
 Blockly.Python.forBlock['set_pin'] = function(block, generator){
   const pin = generator.valueToCode(block, 'PIN', generator.ORDER_ATOMIC || 0) || '0';
   const value = generator.valueToCode(block, 'VALUE', generator.ORDER_ATOMIC || 0) || '0';
-  return `set_pin(${pin}, ${value})\n`;
+  return `pin${pin}.value(${value})\n`;
 };
 Blockly.Python.forBlock['read_pin'] = function(block, generator){
   const pin = generator.valueToCode(block, 'PIN', generator.ORDER_ATOMIC || 0) || '0';
-  return [`read_pin(${pin})`, generator.ORDER_FUNCTION_CALL || 0];
+  return [`pin${pin}.value()`, generator.ORDER_FUNCTION_CALL || 0];
 };
 
 Blockly.Python['set_pin'] = function(block) {
   var pin = Blockly.Python.valueToCode(block, 'PIN', Blockly.Python.ORDER_ATOMIC || 0) || '0';
   var value = Blockly.Python.valueToCode(block, 'VALUE', Blockly.Python.ORDER_ATOMIC || 0) || '0';
-  return 'set_pin(' + pin + ', ' + value + ')\n';
+  // Generate proper MicroPython code
+  return `pin${pin}.value(${value})\n`;
 };
 
 Blockly.Python['read_pin'] = function(block) {
   var pin = Blockly.Python.valueToCode(block, 'PIN', Blockly.Python.ORDER_ATOMIC || 0) || '0';
-  return ['read_pin(' + pin + ')', Blockly.Python.ORDER_FUNCTION_CALL || 0];
+  // Generate proper MicroPython code
+  return [`pin${pin}.value()`, Blockly.Python.ORDER_FUNCTION_CALL || 0];
 };
 
 Blockly.Python['dc_motor'] = function(block) {
@@ -62,8 +64,9 @@ Blockly.Python['touch_sensor'] = function() {
   return ['read_touch()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
-Blockly.Python['color_sensor'] = function() { 
-  return ['read_color()', Blockly.Python.ORDER_FUNCTION_CALL]; 
+Blockly.Python['color_sensor'] = function(block) { 
+  const color = block.getFieldValue('COLOR') || 'red';
+  return [`read_color("${color}")`, Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['joystick1'] = function() { 
@@ -97,24 +100,31 @@ Blockly.Python['oled_display_colored'] = function(block) {
 // NEW PYTHON GENERATORS FOR MISSING BLOCKS
 // ========================================
 
-// Pin mode configuration
+// Pin mode configuration - Generate proper MicroPython code
 Blockly.Python['pin_mode'] = function(block) {
   var pin = block.getFieldValue('PIN');
   var mode = block.getFieldValue('MODE');
-  return `set_pin_mode(${pin}, ${mode})\n`;
+  // Convert mode to MicroPython Pin constants
+  var modeMap = {
+    'INPUT': 'machine.Pin.IN',
+    'OUTPUT': 'machine.Pin.OUT',
+    'INPUT_PULLUP': 'machine.Pin.IN, machine.Pin.PULL_UP'
+  };
+  var micropythonMode = modeMap[mode] || 'machine.Pin.OUT';
+  return `pin${pin} = machine.Pin(${pin}, ${micropythonMode})\n`;
 };
 
-// Analog read
+// Analog read - Generate proper MicroPython code
 Blockly.Python['analog_read'] = function(block) {
   var pin = block.getFieldValue('PIN');
-  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+  return [`machine.ADC(machine.Pin(${pin})).read()`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
-// Analog write (PWM)
+// Analog write (PWM) - Generate proper MicroPython code
 Blockly.Python['analog_write'] = function(block) {
   var pin = block.getFieldValue('PIN');
   var value = block.getFieldValue('VALUE');
-  return `write_analog_pin(${pin}, ${value})\n`;
+  return `pwm${pin} = machine.PWM(machine.Pin(${pin}))\npwm${pin}.duty(${value})\n`;
 };
 
 // Motor speed control
@@ -216,24 +226,78 @@ Blockly.Python['my_program'] = function(block) {
   return 'def msl():\n' + safeBody;
 };
 
+// Helper function to get variable name (Blockly v12 compatible)
+function getVariableName(block, varId) {
+  try {
+    // Method 1: Get from variable field (most reliable in v12)
+    const varField = block.getField('VAR');
+    if (varField) {
+      // Try getText() first (shows the display name)
+      if (typeof varField.getText === 'function') {
+        const text = varField.getText();
+        if (text && text.trim()) return text.trim();
+      }
+      // Try getValue() to get the variable ID, then resolve it
+      if (typeof varField.getValue === 'function') {
+        const id = varField.getValue();
+        if (id && id !== varId) varId = id;
+      }
+    }
+    
+    // Method 2: Use workspace variable map (Blockly v12 API)
+    const workspace = block.getWorkspace();
+    if (workspace && workspace.getVariableMap) {
+      const variable = workspace.getVariableMap().getVariableById(varId);
+      if (variable && variable.name) {
+        return variable.name;
+      }
+    }
+    
+    // Method 3: Try nameDB_ (older API fallback)
+    if (Blockly.Python.nameDB_ && typeof Blockly.Python.nameDB_.getName === 'function') {
+      try {
+        return Blockly.Python.nameDB_.getName(varId, Blockly.Python.NAME_TYPE);
+      } catch (e) {
+        // nameDB_ might not be initialized yet
+      }
+    }
+    
+    // Method 4: Use variable field's text directly as last resort
+    if (varField && varField.text_) {
+      return varField.text_;
+    }
+    
+    // Last resort: return a sanitized version of the ID
+    return (varId || 'var').replace(/[^a-zA-Z0-9_]/g, '_');
+  } catch (e) {
+    console.warn('Error getting variable name:', e);
+    // Ultimate fallback
+    return (varId || 'var').replace(/[^a-zA-Z0-9_]/g, '_');
+  }
+}
+
 Blockly.Python['variables_declare'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   return v + ' = None\n';
 };
 
 Blockly.Python['variables_define'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   const val = Blockly.Python.valueToCode(block, 'VALUE', Blockly.Python.ORDER_ASSIGNMENT) || '0';
   return v + ' = ' + val + '\n';
 };
 
 Blockly.Python['variables_get'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   return [v, Blockly.Python.ORDER_ATOMIC];
 };
 
 Blockly.Python['math_change'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   const delta = Blockly.Python.valueToCode(block, 'DELTA', Blockly.Python.ORDER_ADDITION) || '0';
   return v + ' += ' + delta + '\n';
 };
@@ -271,24 +335,31 @@ Blockly.Python['text_print'] = function(block) {
 // NEW PYTHON FORBLOCK GENERATORS FOR MISSING BLOCKS
 // ========================================
 
-// Pin mode configuration
+// Pin mode configuration - Generate proper MicroPython code
 Blockly.Python.forBlock['pin_mode'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
   var mode = block.getFieldValue('MODE');
-  return `set_pin_mode(${pin}, ${mode})\n`;
+  // Convert mode to MicroPython Pin constants
+  var modeMap = {
+    'INPUT': 'machine.Pin.IN',
+    'OUTPUT': 'machine.Pin.OUT',
+    'INPUT_PULLUP': 'machine.Pin.IN, machine.Pin.PULL_UP'
+  };
+  var micropythonMode = modeMap[mode] || 'machine.Pin.OUT';
+  return `pin${pin} = machine.Pin(${pin}, ${micropythonMode})\n`;
 };
 
-// Analog read
+// Analog read - Generate proper MicroPython code
 Blockly.Python.forBlock['analog_read'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
-  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+  return [`machine.ADC(machine.Pin(${pin})).read()`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
-// Analog write (PWM)
+// Analog write (PWM) - Generate proper MicroPython code
 Blockly.Python.forBlock['analog_write'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
   var value = block.getFieldValue('VALUE');
-  return `write_analog_pin(${pin}, ${value})\n`;
+  return `pwm${pin} = machine.PWM(machine.Pin(${pin}))\npwm${pin}.duty(${value})\n`;
 };
 
 // Motor speed control

@@ -116,10 +116,24 @@ Blockly.defineBlocksWithJsonArray([
   },
   {
     "type": "color_sensor",
-    "message0": "read Color sensor",
+    "message0": "read Color sensor %1",
+    "args0": [
+      {
+        "type": "field_dropdown",
+        "name": "COLOR",
+        "options": [
+          ["red", "red"],
+          ["green", "green"],
+          ["blue", "blue"],
+          ["yellow", "yellow"],
+          ["black", "black"],
+          ["white", "white"]
+        ]
+      }
+    ],
     "output": "String",
     "colour": 120,
-    "tooltip": "Read Color sensor value",
+    "tooltip": "Read Color sensor value with predefined color options",
     "helpUrl": ""
   },
   
@@ -834,10 +848,24 @@ if (!Blockly.Blocks['oled_animation_scroll']) {
   },
   {
     "type": "color_sensor",
-    "message0": "read Color sensor",
+    "message0": "read Color sensor %1",
+    "args0": [
+      {
+        "type": "field_dropdown",
+        "name": "COLOR",
+        "options": [
+          ["red", "red"],
+          ["green", "green"],
+          ["blue", "blue"],
+          ["yellow", "yellow"],
+          ["black", "black"],
+          ["white", "white"]
+        ]
+      }
+    ],
     "output": "String",
     "colour": 120,
-    "tooltip": "Read Color sensor value",
+    "tooltip": "Read Color sensor value with predefined color options",
     "helpUrl": ""
   },
   

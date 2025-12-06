@@ -349,6 +349,34 @@ ipcMain.handle('open-serial-port', async (_e, portPath, baudRate = 115200) => {
   }
 });
 
+// Send data to serial port (Serial Monitor functionality)
+ipcMain.handle('send-serial-data', async (_e, portPath, data) => {
+  try {
+    if (!currentPort || !currentPort.isOpen) {
+      return { success: false, error: 'Port not open' };
+    }
+    
+    // Write data to serial port and wait for completion
+    return new Promise((resolve) => {
+      currentPort.write(data + '\n', (err) => {
+        if (err) {
+          safeSend('serial-data', `\n[Send Error]: ${err.message}\n`);
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+      });
+      
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        resolve({ success: true }); // Assume success if no error callback
+      }, 2000);
+    });
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('close-serial-port', async () => {
   try {
     if (currentPort && currentPort.isOpen) { 
