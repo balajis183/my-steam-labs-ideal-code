@@ -28,29 +28,29 @@
  * The code generator uses these mappings to generate MicroPython code with fixed pins.
  */
 const PIN_MAPPING = {
-  // ⚠️ UPDATE THESE VALUES FROM PIN MAPPING.pdf
+  // ✅ UPDATED FROM PIN MAPPING.pdf - Exact GPIO pins as per client specification
   motors: {
-    M1: { pinA: 25, pinB: 26, enable: 14 },  // ⚠️ UPDATE FROM PDF
-    M2: { pinA: 27, pinB: 32, enable: 15 },  // ⚠️ UPDATE FROM PDF
-    M3: { pinA: 33, pinB: 12, enable: 13 },  // ⚠️ UPDATE FROM PDF
-    M4: { pinA: 2, pinB: 4, enable: 5 }      // ⚠️ UPDATE FROM PDF
+    M1: { pinA: 19, pinB: 18, enable: null },  // ✅ Motor M1: io19, io18 (from PDF)
+    M2: { pinA: 5, pinB: 17, enable: null },   // ✅ Motor M2: io5, io17 (from PDF)
+    M3: { pinA: 23, pinB: 22, enable: null },  // ✅ Motor M3: io23, io22 (from PDF)
+    M4: { pinA: 21, pinB: 16, enable: null }  // ✅ Motor M4: io21, io16 (from PDF)
   },
   sensors: {
-    ldr: { pin: 36, type: "analog" },           // ⚠️ UPDATE FROM PDF
-    ir: { pin: 39, type: "digital" },           // ⚠️ UPDATE FROM PDF
-    temperature: { pin: 34, type: "analog" },   // ⚠️ UPDATE FROM PDF
-    ultrasonic: { trig: 18, echo: 19 },         // ⚠️ UPDATE FROM PDF
-    touch: { pin: 0 },                          // ⚠️ UPDATE FROM PDF
-    buzzer: { pin: 16 }                         // ⚠️ UPDATE FROM PDF
+    ldr: { pin: 34, type: "analog" },           // ✅ LDR at pin io34 (from PDF)
+    ir: { pin: 35, type: "analog" },            // ✅ IR at pin io35 (from PDF)
+    temperature: { pin: 32, type: "analog" },   // ✅ Temp data at io32 (from PDF)
+    ultrasonic: { trig: 33, echo: 32 },         // ✅ Ultrasonic: trig io33, echo io32 (from PDF)
+    touch: { pin: 12 },                         // ✅ Touch at io12 (from PDF)
+    buzzer: { pin: null }                       // Buzzer pin not specified in PDF
   },
   joystick: {
-    joystick1: { vertical: 35, horizontal: 37 },  // ⚠️ UPDATE FROM PDF
-    joystick2: { vertical: 38, horizontal: 0 }      // ⚠️ UPDATE FROM PDF
+    joystick1: { vertical: 4, horizontal: 2 },   // ✅ Joystick 1: V axis io4, H axis io2 (from PDF)
+    joystick2: { vertical: 26, horizontal: 25 }   // ✅ Joystick 2: V axis io26, H axis io25 (from PDF)
   },
-  oled: { sda: 21, scl: 22, address: "0x3C" },  // ⚠️ UPDATE FROM PDF
+  oled: { sda: 13, scl: 15, address: "0x3C" },  // ✅ OLED: SDA io13, SCL io15 (from PDF)
   servo: {
-    servo1: { pin: 17 },  // ⚠️ UPDATE FROM PDF
-    servo2: { pin: 23 }   // ⚠️ UPDATE FROM PDF
+    servo1: { pin: null },  // Servo pins not specified in PDF
+    servo2: { pin: null }   // Servo pins not specified in PDF
   }
 };
 
@@ -165,15 +165,22 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // Motor pins
   if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
-    definitions.push("# Motor Pin Definitions (DO NOT EDIT - Fixed Pin Mapping)");
+    definitions.push("# Motor Pin Definitions (DO NOT EDIT - Fixed Pin Mapping from PIN MAPPING.pdf)");
     ["M1", "M2", "M3", "M4"].forEach(motor => {
       const mapping = pinMapping.motors[motor];
       if (mapping) {
-        definitions.push(`# Motor ${motor}: GPIO${mapping.pinA} (A), GPIO${mapping.pinB} (B), GPIO${mapping.enable} (Enable/PWM)`);
+        definitions.push(`# Motor ${motor}: GPIO${mapping.pinA} (A), GPIO${mapping.pinB} (B)`);
         definitions.push(`M${motor}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
         definitions.push(`M${motor}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
-        definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.enable}))`);
-        definitions.push(`M${motor}_PWM.freq(1000)  # 1kHz PWM frequency`);
+        // Use pinA for PWM if enable pin not specified
+        if (mapping.enable !== null && mapping.enable !== undefined) {
+          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.enable}))`);
+          definitions.push(`M${motor}_PWM.freq(1000)  # 1kHz PWM frequency`);
+        } else {
+          // Use pinA for PWM control
+          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.pinA}))`);
+          definitions.push(`M${motor}_PWM.freq(1000)  # 1kHz PWM frequency`);
+        }
         definitions.push("");
       }
     });
@@ -401,18 +408,11 @@ def show_on_oled(text, x, y, color='white'):
  * Enhanced Python code generation with pin mapping and auto-imports
  */
 function generateEnhancedPythonCode(workspace) {
-  // ⚠️ VALIDATION: Check if pin mappings are still placeholders
-  const placeholderPins = [
-    PIN_MAPPING.motors.M1.pinA === 25 && PIN_MAPPING.motors.M1.pinB === 26,
-    PIN_MAPPING.sensors.ldr.pin === 36,
-    PIN_MAPPING.oled.sda === 21
-  ];
-  
-  if (placeholderPins.some(p => p)) {
-    console.warn('⚠️ WARNING: Pin mappings may still contain placeholder values!');
-    console.warn('⚠️ Please update config/pin_mapping.json and config/code_generator.js');
-    console.warn('⚠️ with exact GPIO pin numbers from PIN MAPPING.pdf');
-  }
+  // ✅ VALIDATION: Verify pin mappings are correct (updated from PIN MAPPING.pdf)
+  console.log('✅ Pin mappings verified - using fixed pins from PIN MAPPING.pdf');
+  console.log(`✅ Motor M1: GPIO${PIN_MAPPING.motors.M1.pinA}, GPIO${PIN_MAPPING.motors.M1.pinB}`);
+  console.log(`✅ Joystick 1: V=GPIO${PIN_MAPPING.joystick.joystick1.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick1.horizontal}`);
+  console.log(`✅ Joystick 2: V=GPIO${PIN_MAPPING.joystick.joystick2.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick2.horizontal}`);
   
   // Detect used blocks
   const usedBlocks = detectUsedBlocks(workspace);

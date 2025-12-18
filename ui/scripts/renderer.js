@@ -327,25 +327,93 @@ function getSelectedLanguage(code) {
 }
 
 // Enhanced language detection function
+// ⚠️ CRITICAL: MicroPython detection MUST come FIRST to prevent false C/C++ detection
 function detectLanguageFromCode(code) {
   if (!code || !code.trim()) {
     return lastGeneratedLanguage || 'python';
   }
   
-  // C++ detection (more comprehensive) - but exclude MicroPython code
-  // Check for C++ ONLY if it's NOT MicroPython code
-  const isMicroPython = code.includes('from machine import') || 
-                        code.includes('machine.Pin') || 
-                        code.includes('MicroPython');
+  // ============================================
+  // STEP 1: MicroPython Detection (HIGHEST PRIORITY)
+  // ============================================
+  // Check for MicroPython-specific patterns FIRST before any C/C++ detection
+  const microPythonIndicators = [
+    'from machine import',
+    'import machine',
+    'machine.Pin',
+    'machine.PWM',
+    'machine.ADC',
+    'machine.SoftI2C',
+    'import ssd1306',
+    'import dht',
+    'import servo',
+    'MicroPython',
+    'time.sleep_us',
+    'time.ticks_us',
+    'Pin.OUT',
+    'Pin.IN',
+    'PWM(',
+    'ADC(',
+    'SoftI2C(',
+    'MY STEAM LAB - Generated MicroPython Code',  // Header from our generator
+    'Ready to upload to ESP32 Dev Board via MicroPython'
+  ];
   
-  if (!isMicroPython && (
-      code.includes('#include') || 
+  const hasMicroPythonIndicator = microPythonIndicators.some(indicator => 
+    code.includes(indicator)
+  );
+  
+  if (hasMicroPythonIndicator) {
+    console.log('✅ Detected MicroPython code - returning python');
+    return 'python';
+  }
+  
+  // ============================================
+  // STEP 2: Standard Python Detection
+  // ============================================
+  // Check for Python patterns (but not C/C++ patterns)
+  const pythonIndicators = [
+    'def ',
+    'import ',
+    'print(',
+    'if __name__',
+    'try:',
+    'except:',
+    'with open(',
+    'class '  // Python classes (but not C++ classes with public:)
+  ];
+  
+  const hasPythonIndicator = pythonIndicators.some(indicator => 
+    code.includes(indicator)
+  );
+  
+  // Only return Python if it's clearly Python (not C/C++)
+  // Check that it's NOT C/C++ code
+  const isNotCpp = !code.includes('#include') && 
+                    !code.includes('void setup()') && 
+                    !code.includes('void loop()') &&
+                    !code.includes('int main()') &&
+                    !code.includes('Arduino.h');
+  
+  const isNotC = !code.includes('#include <stdio.h>') && 
+                 !code.includes('printf(') && 
+                 !code.includes('scanf(');
+  
+  if (hasPythonIndicator && isNotCpp && isNotC) {
+    console.log('✅ Detected Python code - returning python');
+    return 'python';
+  }
+  
+  // ============================================
+  // STEP 3: C++ Detection (only if NOT MicroPython/Python)
+  // ============================================
+  if (code.includes('#include') || 
       code.includes('int main()') || 
       code.includes('void main()') ||
       code.includes('void setup()') || 
       code.includes('void loop()') ||
       code.includes('Arduino.h') ||
-      (code.includes('ESP32') && code.includes('#include')) ||  // ESP32 in C++ context
+      (code.includes('ESP32') && code.includes('#include')) ||
       code.includes('std::cout') ||
       code.includes('std::cin') ||
       code.includes('namespace std') ||
@@ -360,51 +428,25 @@ function detectLanguageFromCode(code) {
       code.includes('cout <<') ||
       code.includes('cin >>') ||
       code.includes('return 0;') ||
-      code.includes('using namespace'))) {
+      code.includes('using namespace')) {
+    console.log('✅ Detected C++ code - returning cpp');
     return 'cpp';
   }
   
-  // C detection
+  // ============================================
+  // STEP 4: C Detection (only if NOT MicroPython/Python/C++)
+  // ============================================
   if (code.includes('#include <stdio.h>') || 
-      code.includes('printf(') || 
-      code.includes('scanf(') ||
-      code.includes('main()') ||
-      code.includes('malloc(') ||
-      code.includes('free(')) {
+      (code.includes('printf(') && !code.includes('print(')) || 
+      (code.includes('scanf(') && !code.includes('input(')) ||
+      (code.includes('main()') && code.includes('#include'))) {
+    console.log('✅ Detected C code - returning c');
     return 'c';
   }
   
-  // Python/MicroPython detection (check FIRST before C++ to avoid false positives)
-  // MicroPython-specific keywords take priority
-  if (code.includes('from machine import') || 
-      code.includes('import machine') ||
-      code.includes('machine.Pin') ||
-      code.includes('machine.PWM') ||
-      code.includes('machine.ADC') ||
-      code.includes('import ssd1306') ||
-      code.includes('import dht') ||
-      code.includes('import servo') ||
-      code.includes('MicroPython') ||
-      code.includes('ESP32') && code.includes('def ') ||
-      code.includes('time.sleep') ||
-      code.includes('time.sleep_us') ||
-      code.includes('time.ticks_us')) {
-    return 'python';  // MicroPython is Python
-  }
-  
-  // Standard Python detection
-  if (code.includes('import ') || 
-      code.includes('print(') || 
-      code.includes('def ') ||
-      code.includes('if __name__') ||
-      code.includes('class ') && !code.includes('public:') ||
-      code.includes('try:') ||
-      code.includes('except:') ||
-      code.includes('with open(')) {
-    return 'python';
-  }
-  
-  // JavaScript detection
+  // ============================================
+  // STEP 5: JavaScript Detection
+  // ============================================
   if (code.includes('function') || 
       code.includes('console.log') || 
       code.includes('var ') || 
@@ -413,9 +455,12 @@ function detectLanguageFromCode(code) {
       code.includes('=>') ||
       code.includes('async ') ||
       code.includes('await ')) {
+    console.log('✅ Detected JavaScript code - returning javascript');
     return 'javascript';
   }
   
+  // Default to Python (since we're generating MicroPython)
+  console.log(`⚠️ Language unclear, defaulting to: ${lastGeneratedLanguage || 'python'}`);
   return lastGeneratedLanguage || 'python';
 }
 
