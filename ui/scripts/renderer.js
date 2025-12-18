@@ -121,7 +121,16 @@ function getCurrentLanguage() {
 
 // Set the current language when code is generated
 function setCurrentLanguage(language) {
+  currentLanguage = language;
   lastGeneratedLanguage = language;
+  
+  // Update language dropdown to match
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = language;
+    console.log(`✅ Language dropdown updated to: ${language}`);
+  }
+  
   console.log(`🎯 Language set to: ${language}`);
 }
 
@@ -276,18 +285,45 @@ async function autoDetectLanguage() {
 
 // Helper to get selected language from dropdown or auto-detect
 function getSelectedLanguage(code) {
+  // First, detect language from code (most reliable)
+  const detectedLanguage = detectLanguageFromCode(code);
+  
   const langSelect = document.getElementById('languageSelect');
   if (langSelect) {
     const selected = langSelect.value;
+    
+    // If auto-detect is selected, use detected language
     if (selected === 'auto') {
-      // Auto-detect language
-      return detectLanguageFromCode(code);
-    } else if (selected === 'python' || selected === 'cpp' || selected === 'javascript' || selected === 'c') {
+      return detectedLanguage;
+    }
+    
+    // ⚠️ CRITICAL: If detected language is Python but dropdown says C++, trust the code!
+    // This prevents trying to compile Python code as C++
+    if (detectedLanguage === 'python' && selected === 'cpp') {
+      console.warn('⚠️ Language mismatch: Code is Python/MicroPython but dropdown says C++. Using Python.');
+      console.warn('⚠️ This prevents C++ compilation errors on Python code.');
+      // Update dropdown to match detected language
+      langSelect.value = 'python';
+      setCurrentLanguage('python');
+      return 'python';
+    }
+    
+    // If detected language is C++ but dropdown says Python, trust the code too
+    if (detectedLanguage === 'cpp' && selected === 'python') {
+      console.warn('⚠️ Language mismatch: Code is C++ but dropdown says Python. Using C++.');
+      langSelect.value = 'cpp';
+      setCurrentLanguage('cpp');
+      return 'cpp';
+    }
+    
+    // Otherwise, use dropdown selection
+    if (selected === 'python' || selected === 'cpp' || selected === 'javascript' || selected === 'c') {
       return selected;
     }
   }
+  
   // Fallback to auto-detect
-  return detectLanguageFromCode(code);
+  return detectedLanguage;
 }
 
 // Enhanced language detection function
@@ -296,18 +332,24 @@ function detectLanguageFromCode(code) {
     return lastGeneratedLanguage || 'python';
   }
   
-  // C++ detection (more comprehensive)
-  if (code.includes('#include') || 
+  // C++ detection (more comprehensive) - but exclude MicroPython code
+  // Check for C++ ONLY if it's NOT MicroPython code
+  const isMicroPython = code.includes('from machine import') || 
+                        code.includes('machine.Pin') || 
+                        code.includes('MicroPython');
+  
+  if (!isMicroPython && (
+      code.includes('#include') || 
       code.includes('int main()') || 
       code.includes('void main()') ||
       code.includes('void setup()') || 
       code.includes('void loop()') ||
       code.includes('Arduino.h') ||
-      code.includes('ESP32') ||
+      (code.includes('ESP32') && code.includes('#include')) ||  // ESP32 in C++ context
       code.includes('std::cout') ||
       code.includes('std::cin') ||
       code.includes('namespace std') ||
-      code.includes('class ') ||
+      (code.includes('class ') && code.includes('public:')) ||
       code.includes('public:') ||
       code.includes('private:') ||
       code.includes('protected:') ||
@@ -318,7 +360,7 @@ function detectLanguageFromCode(code) {
       code.includes('cout <<') ||
       code.includes('cin >>') ||
       code.includes('return 0;') ||
-      code.includes('using namespace')) {
+      code.includes('using namespace'))) {
     return 'cpp';
   }
   
@@ -332,12 +374,30 @@ function detectLanguageFromCode(code) {
     return 'c';
   }
   
-  // Python detection
+  // Python/MicroPython detection (check FIRST before C++ to avoid false positives)
+  // MicroPython-specific keywords take priority
+  if (code.includes('from machine import') || 
+      code.includes('import machine') ||
+      code.includes('machine.Pin') ||
+      code.includes('machine.PWM') ||
+      code.includes('machine.ADC') ||
+      code.includes('import ssd1306') ||
+      code.includes('import dht') ||
+      code.includes('import servo') ||
+      code.includes('MicroPython') ||
+      code.includes('ESP32') && code.includes('def ') ||
+      code.includes('time.sleep') ||
+      code.includes('time.sleep_us') ||
+      code.includes('time.ticks_us')) {
+    return 'python';  // MicroPython is Python
+  }
+  
+  // Standard Python detection
   if (code.includes('import ') || 
       code.includes('print(') || 
       code.includes('def ') ||
       code.includes('if __name__') ||
-      code.includes('class ') ||
+      code.includes('class ') && !code.includes('public:') ||
       code.includes('try:') ||
       code.includes('except:') ||
       code.includes('with open(')) {
@@ -383,7 +443,13 @@ function autoDetectLanguageFromCode() {
 // Update compileCode, uploadCode, runCode to use getSelectedLanguage
 async function compileCode() {
   const code = getCurrentCode();
-  // Auto-detect language first
+  
+  if (!code.trim()) {
+    appendTerminalOutput('❌ No code to compile. Please generate some code first.');
+    return;
+  }
+  
+  // Auto-detect language first (force detection from code, ignore dropdown if wrong)
   autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
@@ -393,8 +459,12 @@ async function compileCode() {
   console.log(`🎯 Detected language: ${language}`);
   console.log(`📝 Language dropdown value: ${document.getElementById('languageSelect')?.value}`);
   
-  if (!code.trim()) {
-    appendTerminalOutput('❌ No code to compile. Please generate some code first.');
+  // ⚠️ IMPORTANT: Python/MicroPython doesn't need compilation!
+  if (language === 'python') {
+    appendTerminalOutput('⚠️ Python/MicroPython is an interpreted language - no compilation needed!');
+    appendTerminalOutput('💡 Use "Upload" button to upload MicroPython code to ESP32');
+    appendTerminalOutput('💡 Or use "Run" button to execute the code');
+    showTerminal();
     return;
   }
   
@@ -407,8 +477,9 @@ async function compileCode() {
     let result;
     switch (language) {
       case 'python':
-        result = await window.electronAPI.compilePython(code);
-        break;
+        // Should not reach here, but handle just in case
+        appendTerminalOutput('⚠️ Python code does not need compilation. Use Upload or Run instead.');
+        return;
       case 'javascript':
         result = await window.electronAPI.compileJavaScript(code);
         break;

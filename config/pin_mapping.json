@@ -1,0 +1,128 @@
+{
+  "_NOTE": "⚠️ IMPORTANT: Update all pin numbers below to match PIN MAPPING.pdf exactly!",
+  "_INSTRUCTIONS": "Open PIN MAPPING.pdf, find each component's GPIO pins, and update the values below.",
+  "motors": {
+    "M1": {
+      "pinA": 25,
+      "pinB": 26,
+      "enable": 14,
+      "pwm": true,
+      "description": "Motor M1 - ⚠️ UPDATE GPIO pins from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS - replace with actual pins from PDF"
+    },
+    "M2": {
+      "pinA": 27,
+      "pinB": 32,
+      "enable": 15,
+      "pwm": true,
+      "description": "Motor M2 - ⚠️ UPDATE GPIO pins from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS - replace with actual pins from PDF"
+    },
+    "M3": {
+      "pinA": 33,
+      "pinB": 12,
+      "enable": 13,
+      "pwm": true,
+      "description": "Motor M3 - ⚠️ UPDATE GPIO pins from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS - replace with actual pins from PDF"
+    },
+    "M4": {
+      "pinA": 2,
+      "pinB": 4,
+      "enable": 5,
+      "pwm": true,
+      "description": "Motor M4 - ⚠️ UPDATE GPIO pins from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS - replace with actual pins from PDF"
+    }
+  },
+  "sensors": {
+    "ldr": {
+      "pin": 36,
+      "type": "analog",
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    },
+    "ir": {
+      "pin": 39,
+      "type": "digital",
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    },
+    "temperature": {
+      "pin": 34,
+      "type": "analog",
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    },
+    "ultrasonic": {
+      "trig": 18,
+      "echo": 19,
+      "type": "digital",
+      "description": "⚠️ UPDATE GPIO pins (TRIG, ECHO) from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS"
+    },
+    "touch": {
+      "pin": 0,
+      "type": "digital",
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    },
+    "buzzer": {
+      "pin": 16,
+      "type": "pwm",
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    }
+  },
+  "joystick": {
+    "joystick1": {
+      "vertical": 35,
+      "horizontal": 37,
+      "type": "analog",
+      "description": "⚠️ UPDATE GPIO pins (V, H) from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS"
+    },
+    "joystick2": {
+      "vertical": 38,
+      "horizontal": 0,
+      "type": "analog",
+      "description": "⚠️ UPDATE GPIO pins (V, H) from PIN MAPPING.pdf",
+      "_NOTE": "Current values are PLACEHOLDERS"
+    }
+  },
+  "oled": {
+    "sda": 21,
+    "scl": 22,
+    "type": "i2c",
+    "address": "0x3C",
+    "description": "⚠️ UPDATE GPIO pins (SDA, SCL) from PIN MAPPING.pdf",
+    "_NOTE": "Current values are PLACEHOLDERS"
+  },
+  "servo": {
+    "servo1": {
+      "pin": 17,
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    },
+    "servo2": {
+      "pin": 23,
+      "description": "⚠️ UPDATE GPIO pin from PIN MAPPING.pdf",
+      "_NOTE": "Current value is PLACEHOLDER"
+    }
+  },
+  "communication": {
+    "i2c": {
+      "sda": 21,
+      "scl": 22,
+      "description": "I2C Bus - GPIO21 (SDA), GPIO22 (SCL)"
+    },
+    "spi": {
+      "mosi": 23,
+      "miso": 19,
+      "sck": 18,
+      "cs": 5,
+      "description": "SPI Bus - GPIO23 (MOSI), GPIO19 (MISO), GPIO18 (SCK), GPIO5 (CS)"
+    }
+  }
+}
+

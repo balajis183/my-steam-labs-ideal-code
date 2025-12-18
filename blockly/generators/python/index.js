@@ -35,32 +35,44 @@ Blockly.Python['dc_motor'] = function(block) {
   var motor = block.getFieldValue('MOTOR');
   var speed = Blockly.Python.valueToCode(block, 'SPEED', Blockly.Python.ORDER_ATOMIC) || '0';
   var direction = block.getFieldValue('DIRECTION');
+  // Use fixed pin mapping - motor pins are defined in pin definitions section
   return 'set_motor("' + motor + '", ' + speed + ', "' + direction + '")\n';
 };
 
 Blockly.Python['servo_motor'] = function(block) {
-  var servo = block.getFieldValue('SERVO');
+  var servoNum = block.getFieldValue('SERVO') || '1';
   var angle = Blockly.Python.valueToCode(block, 'ANGLE', Blockly.Python.ORDER_ATOMIC) || '0';
-  return 'set_servo(' + servo + ', ' + angle + ')\n';
+  // Servo uses fixed pins: GPIO17 (servo1) or GPIO23 (servo2)
+  // Servo pins are initialized in pin definitions section
+  if (servoNum === '1' || servoNum === '' || servoNum === null) {
+    return 'servo1.write(' + angle + ')\n';
+  } else {
+    return 'servo2.write(' + angle + ')\n';
+  }
 };
 
 Blockly.Python['ldr_sensor'] = function() { 
+  // LDR sensor uses fixed GPIO36 pin (defined in pin definitions)
   return ['read_ldr()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['ir_sensor'] = function() { 
+  // IR sensor uses fixed GPIO39 pin (defined in pin definitions)
   return ['read_ir()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['temp_sensor'] = function() { 
+  // Temperature sensor uses fixed GPIO34 pin (defined in pin definitions)
   return ['read_temperature()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['ultrasonic_sensor'] = function() { 
+  // Ultrasonic sensor uses fixed GPIO18 (TRIG) and GPIO19 (ECHO) pins
   return ['read_ultrasonic()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['touch_sensor'] = function() { 
+  // Touch sensor uses fixed GPIO0 pin (defined in pin definitions)
   return ['read_touch()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
@@ -70,16 +82,19 @@ Blockly.Python['color_sensor'] = function(block) {
 };
 
 Blockly.Python['joystick1'] = function() { 
+  // Joystick 1 uses fixed GPIO35 (V) and GPIO37 (H) pins
   return ['read_joystick1()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['joystick2'] = function() { 
+  // Joystick 2 uses fixed GPIO38 (V) and GPIO0 (H) pins
   return ['read_joystick2()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['oled_show'] = function(block) {
   var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
-  return 'oled_display(' + text + ')\n';
+  // OLED uses fixed GPIO21 (SDA) and GPIO22 (SCL) pins via I2C
+  return 'show_on_oled(' + text + ', 0, 0, "white")\n';
 };
 
 Blockly.Python['oled_show_color'] = function(block) {

@@ -205,16 +205,30 @@ function generateJavaScriptCode() {
 function generatePythonCode() {
   let code = '';
   try {
-    if (!Blockly.Python) throw new Error('Python generator missing');
-    code = Blockly.Python.workspaceToCode(workspace);
-    
-    // Add machine import if hardware functions are used
-    if (code.includes('machine.Pin') || code.includes('machine.ADC') || code.includes('machine.PWM') || 
-        code.includes('pin') && (code.includes('Pin(') || code.includes('.value('))) {
-      // Check if import is already there
-      if (!code.includes('import machine')) {
-        code = 'import machine\n' + code;
+    // Use enhanced code generator if available
+    if (typeof window.generateEnhancedPythonCode === 'function') {
+      code = window.generateEnhancedPythonCode(workspace);
+      console.log('✅ Enhanced Python code generated with fixed pin mappings and auto-imports');
+    } else if (Blockly.Python) {
+      // Fallback to standard generator
+      code = Blockly.Python.workspaceToCode(workspace);
+      
+      // Add machine import if hardware functions are used
+      if (code.includes('machine.Pin') || code.includes('machine.ADC') || code.includes('machine.PWM') || 
+          code.includes('pin') && (code.includes('Pin(') || code.includes('.value('))) {
+        if (!code.includes('import machine')) {
+          code = 'from machine import Pin, PWM, ADC, SoftI2C\n' + code;
+        }
       }
+      
+      // Add time import if delays are used
+      if (code.includes('time.sleep') && !code.includes('import time')) {
+        code = 'import time\n' + code;
+      }
+      
+      console.warn('⚠️ Using standard Python generator. Enhanced generator not loaded.');
+    } else {
+      throw new Error('Python generator missing');
     }
   } catch (err) {
     console.warn('Python generation failed, using JS->Python fallback:', err?.message || err);
@@ -231,7 +245,21 @@ function generatePythonCode() {
       .replace(/!=/g, '!=');
   }
   sendCodeToMonaco(code, 'python');
-  if (typeof window.setCurrentLanguage === 'function') window.setCurrentLanguage('python');
+  
+  // CRITICAL: Set language to Python and update dropdown
+  if (typeof window.setCurrentLanguage === 'function') {
+    window.setCurrentLanguage('python');
+  }
+  
+  // Also update dropdown directly to ensure it's set
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = 'python';
+    console.log('✅ Language dropdown set to Python after code generation');
+  }
+  
+  // Show message that Python doesn't need compilation
+  console.log('💡 Generated MicroPython code - use Upload or Run, not Compile');
 }
 
 // Real-time conversion of Blockly blocks into Python
@@ -269,8 +297,16 @@ function setupRealTimePythonConversion() {
             }
             
             sendCodeToMonaco(code, 'python');
+            
+            // CRITICAL: Set language to Python and update dropdown
             if (typeof window.setCurrentLanguage === 'function') {
               window.setCurrentLanguage('python');
+            }
+            
+            // Also update dropdown directly to ensure it's set
+            const langSelect = document.getElementById('languageSelect');
+            if (langSelect) {
+              langSelect.value = 'python';
             }
           }
         } catch (err) {

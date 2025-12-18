@@ -1,0 +1,57 @@
+{
+  "block_to_libraries": {
+    "dc_motor": ["machine"],
+    "motor_speed": ["machine"],
+    "servo_motor": ["machine", "servo"],
+    "ldr_sensor": ["machine"],
+    "ir_sensor": ["machine"],
+    "ir_sensor_analog": ["machine"],
+    "temp_sensor": ["machine", "dht"],
+    "ultrasonic_sensor": ["machine", "time"],
+    "touch_sensor": ["machine"],
+    "color_sensor": ["machine"],
+    "joystick1": ["machine"],
+    "joystick2": ["machine"],
+    "oled_show": ["machine", "ssd1306"],
+    "oled_show_color": ["machine", "ssd1306"],
+    "oled_display_colored": ["machine", "ssd1306"],
+    "oled_display_variable": ["machine", "ssd1306"],
+    "oled_display_char": ["machine", "ssd1306"],
+    "oled_animation_blink": ["machine", "ssd1306", "time"],
+    "oled_animation_scroll": ["machine", "ssd1306", "time"],
+    "set_pin": ["machine"],
+    "read_pin": ["machine"],
+    "pin_mode": ["machine"],
+    "analog_read": ["machine"],
+    "analog_write": ["machine"],
+    "time_delay": ["time"],
+    "wifi_connect": ["network"],
+    "wifi_send": ["network", "socket"],
+    "wifi_receive": ["network", "socket"],
+    "bluetooth_setup": ["ubluetooth"],
+    "bluetooth_send": ["ubluetooth"],
+    "bluetooth_available": ["ubluetooth"],
+    "bluetooth_read": ["ubluetooth"]
+  },
+  "library_imports": {
+    "machine": "from machine import Pin, PWM, ADC, SoftI2C",
+    "time": "import time",
+    "ssd1306": "import ssd1306",
+    "servo": "import servo",
+    "dht": "import dht",
+    "network": "import network",
+    "socket": "import socket",
+    "ubluetooth": "import ubluetooth"
+  },
+  "library_descriptions": {
+    "machine": "Core hardware interface for pins, PWM, ADC, I2C",
+    "time": "Time delays and timing functions",
+    "ssd1306": "OLED display driver library",
+    "servo": "Servo motor control library",
+    "dht": "DHT temperature/humidity sensor library",
+    "network": "WiFi network connectivity",
+    "socket": "Network socket communication",
+    "ubluetooth": "Bluetooth Low Energy support"
+  }
+}
+
