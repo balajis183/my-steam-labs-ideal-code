@@ -1,5 +1,13 @@
 # Pin Mapping & Language Detection Fixes - Summary
 
+## ⚠️ CRITICAL HARDWARE SETTINGS
+
+### Fixed Baud Rate: 115200
+- **Baud Rate**: 115200 (FIXED - DO NOT CHANGE)
+- This is the fixed serial communication speed for the ESP32 board
+- All serial communication (upload, monitor, REPL) uses 115200 baud
+- See `config/BAUD_RATE_CONFIG.md` for details
+
 ## ✅ Issues Fixed
 
 ### 1. **Pin Mappings Updated to Match PIN MAPPING.pdf**

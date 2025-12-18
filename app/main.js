@@ -55,6 +55,10 @@ async function findPythonPath() {
   throw new Error('No Python installation found. Please install Python and ensure it\'s in your PATH.');
 }
 
+// ⚠️ CRITICAL: Fixed Baud Rate for ESP32 Board
+// This is the fixed serial communication speed - DO NOT CHANGE
+const ESP32_BAUD_RATE = 115200;
+
 // Utility: check and install mpremote if needed
 async function ensureMpremoteInstalled(pythonPath) {
   try {
@@ -111,7 +115,7 @@ async function isPortAvailable(portPath) {
       console.log(`🔍 Testing port availability for ${portPath}...`);
       const testPort = new SerialPort({ 
         path: portPath, 
-        baudRate: 115200, 
+        baudRate: ESP32_BAUD_RATE,  // Fixed: 115200 for this ESP32 board
         autoOpen: false,
         timeout: 1000
       });
@@ -190,7 +194,7 @@ async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
       // Open serial port to capture ESP32 output
       serialPort = new SerialPort({ 
         path: portPath, 
-        baudRate: 115200, 
+        baudRate: ESP32_BAUD_RATE,  // Fixed: 115200 for this ESP32 board
         autoOpen: false 
       });
       
@@ -332,7 +336,7 @@ ipcMain.handle('list-serial-ports', async () => {
   }
 });
 
-ipcMain.handle('open-serial-port', async (_e, portPath, baudRate = 115200) => {
+ipcMain.handle('open-serial-port', async (_e, portPath, baudRate = ESP32_BAUD_RATE) => {
   try {
     if (currentPort && currentPort.isOpen) { 
       await new Promise(r => currentPort.close(r)); 
@@ -496,20 +500,80 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
           return;
         }
         
-        // Simple port release
+        // Release port and reset ESP32 first
         await releaseComPortIfNeeded(port);
         
-        // Upload with simple error handling
+        // Reset ESP32 to ensure clean state (helps with "could not enter raw repl" error)
+        safeSend('terminal-output', '🔄 Resetting ESP32 to ensure clean connection...');
+        try {
+          const resetCommand = `"${pythonPath}" -m mpremote connect ${port} reset`;
+          await new Promise((resolve, reject) => {
+            exec(resetCommand, { timeout: 5000 }, (err) => {
+              // Ignore errors on reset - ESP32 might not respond, that's okay
+              setTimeout(resolve, 2000); // Wait 2 seconds after reset
+            });
+          });
+        } catch (resetErr) {
+          console.log('Reset command completed (errors are normal)');
+        }
+        
+        // Upload with retry logic for "could not enter raw repl" error
         safeSend('terminal-output', '🚀 Uploading code to ESP32...');
         
-                 const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
-        console.log(`Executing: ${uploadCommand}`);
+        let uploadResult = null;
+        let retryCount = 0;
+        const maxRetries = 3;
         
-        const uploadResult = await captureSerialOutput(port, uploadCommand, 15000);
-        if (!uploadResult.success) {
-          console.error('❌ Upload failed:', uploadResult.error);
-          safeSend('terminal-output', `❌ Upload failed: ${uploadResult.error}`);
-          res({ success: false, error: uploadResult.error });
+        while (retryCount < maxRetries && !uploadResult?.success) {
+          if (retryCount > 0) {
+            safeSend('terminal-output', `🔄 Retry ${retryCount}/${maxRetries - 1} - Resetting ESP32 and retrying...`);
+            // Reset again before retry
+            try {
+              const resetCmd = `"${pythonPath}" -m mpremote connect ${port} reset`;
+              await new Promise((resolve) => {
+                exec(resetCmd, { timeout: 5000 }, () => setTimeout(resolve, 2000));
+              });
+            } catch (e) {}
+          }
+          
+          const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
+          console.log(`Executing (attempt ${retryCount + 1}): ${uploadCommand}`);
+          
+          uploadResult = await captureSerialOutput(port, uploadCommand, 15000);
+          
+          if (!uploadResult.success) {
+            const isReplError = uploadResult.error?.includes('could not enter raw repl') || 
+                               uploadResult.error?.includes('TransportError');
+            
+            if (isReplError && retryCount < maxRetries - 1) {
+              retryCount++;
+              continue; // Retry
+            } else {
+              // Final failure or non-repl error
+              console.error('❌ Upload failed:', uploadResult.error);
+              
+              // Provide helpful error message
+              let errorMsg = uploadResult.error;
+              if (isReplError) {
+                errorMsg = `ESP32 communication error: Could not enter raw REPL mode.\n\n` +
+                          `💡 Troubleshooting steps:\n` +
+                          `1. Press the RESET button on your ESP32 board\n` +
+                          `2. Unplug and replug the USB cable\n` +
+                          `3. Make sure no other program is using COM${port}\n` +
+                          `4. Check that ESP32 has MicroPython firmware installed\n` +
+                          `5. Try a different USB cable or port\n` +
+                          `6. Wait 5 seconds and try again`;
+              }
+              
+              safeSend('terminal-output', `❌ Upload failed: ${errorMsg}`);
+              res({ success: false, error: errorMsg });
+              return;
+            }
+          }
+        }
+        
+        if (!uploadResult || !uploadResult.success) {
+          res({ success: false, error: 'Upload failed after multiple retries' });
           return;
         }
         

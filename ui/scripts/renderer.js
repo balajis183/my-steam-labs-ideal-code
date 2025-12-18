@@ -891,7 +891,9 @@ async function selectPort(portPath, silent = false) {
   
   console.log(`🔌 Attempting to select port: ${portPath}`);
   currentPort = portPath;
-  const result = await window.electronAPI.openSerialPort(portPath, 115200);
+  // Fixed baud rate: 115200 for ESP32 board (DO NOT CHANGE)
+  const ESP32_BAUD_RATE = 115200;
+  const result = await window.electronAPI.openSerialPort(portPath, ESP32_BAUD_RATE);
   
   if (result.success) {
     console.log(`✅ Successfully connected to ${portPath}`);

@@ -9,6 +9,11 @@
  * - Proper MicroPython code structure (ESP32-compatible)
  * - Ready-to-upload ESP32 MicroPython code
  * - Uses MicroPython-specific APIs (machine module, not Arduino/C++)
+ * 
+ * ⚠️ CRITICAL HARDWARE SETTINGS:
+ * - Baud Rate: 115200 (FIXED - DO NOT CHANGE)
+ *   This is the fixed serial communication speed for this ESP32 board.
+ *   All serial communication (upload, monitor, REPL) uses 115200 baud.
  */
 
 /**
