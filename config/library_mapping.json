@@ -39,6 +39,8 @@
     "ssd1306": "import ssd1306",
     "servo": "import servo",
     "dht": "import dht",
+    "hcsr04": "import hcsr04",
+    "tcs34725": "import tcs34725",
     "network": "import network",
     "socket": "import socket",
     "ubluetooth": "import ubluetooth"

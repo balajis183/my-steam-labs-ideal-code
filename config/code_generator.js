@@ -69,9 +69,9 @@ const LIBRARY_MAPPING = {
     ir_sensor: ["machine"],
     ir_sensor_analog: ["machine"],
     temp_sensor: ["machine", "dht"],
-    ultrasonic_sensor: ["machine", "time"],
+    ultrasonic_sensor: ["machine", "time", "hcsr04"],
     touch_sensor: ["machine"],
-    color_sensor: ["machine"],
+    color_sensor: ["machine", "tcs34725"],
     joystick1: ["machine"],
     joystick2: ["machine"],
     oled_show: ["machine", "ssd1306"],
@@ -101,6 +101,8 @@ const LIBRARY_MAPPING = {
     ssd1306: "import ssd1306",
     servo: "import servo",
     dht: "import dht",
+    hcsr04: "import hcsr04",
+    tcs34725: "import tcs34725",
     network: "import network",
     socket: "import socket",
     ubluetooth: "import ubluetooth"
@@ -170,22 +172,17 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // Motor pins
   if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
-    definitions.push("# Motor Pin Definitions (DO NOT EDIT - Fixed Pin Mapping from PIN MAPPING.pdf)");
     ["M1", "M2", "M3", "M4"].forEach(motor => {
       const mapping = pinMapping.motors[motor];
       if (mapping) {
-        definitions.push(`# Motor ${motor}: GPIO${mapping.pinA} (A), GPIO${mapping.pinB} (B)`);
         definitions.push(`M${motor}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
         definitions.push(`M${motor}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
-        // Use pinA for PWM if enable pin not specified
         if (mapping.enable !== null && mapping.enable !== undefined) {
           definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.enable}))`);
-          definitions.push(`M${motor}_PWM.freq(1000)  # 1kHz PWM frequency`);
         } else {
-          // Use pinA for PWM control
           definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.pinA}))`);
-          definitions.push(`M${motor}_PWM.freq(1000)  # 1kHz PWM frequency`);
         }
+        definitions.push(`M${motor}_PWM.freq(1000)`);
         definitions.push("");
       }
     });
@@ -193,52 +190,42 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // Sensor pins
   if (usedBlocks.includes("ldr_sensor")) {
-    definitions.push("# LDR Sensor Pin Definition");
     definitions.push(`LDR_PIN = ADC(Pin(${pinMapping.sensors.ldr.pin}))`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("ir_sensor") || usedBlocks.includes("ir_sensor_analog")) {
-    definitions.push("# IR Sensor Pin Definition");
     definitions.push(`IR_PIN = ADC(Pin(${pinMapping.sensors.ir.pin}))`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("temp_sensor")) {
-    definitions.push("# Temperature Sensor Pin Definition");
-    // Check if dht library is available (it should be imported)
     definitions.push(`TEMP_PIN = Pin(${pinMapping.sensors.temperature.pin})`);
     definitions.push(`try:`);
     definitions.push(`    temp_sensor = dht.DHT22(TEMP_PIN)`);
     definitions.push(`except:`);
-    definitions.push(`    # Fallback if DHT library not available`);
     definitions.push(`    temp_sensor = None`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("ultrasonic_sensor")) {
-    definitions.push("# Ultrasonic Sensor Pin Definitions");
-    definitions.push(`ULTRASONIC_TRIG = Pin(${pinMapping.sensors.ultrasonic.trig}, Pin.OUT)`);
-    definitions.push(`ULTRASONIC_ECHO = Pin(${pinMapping.sensors.ultrasonic.echo}, Pin.IN)`);
+    definitions.push(`ULTRASONIC_SENSOR = hcsr04.HCSR04(trigger_pin=${pinMapping.sensors.ultrasonic.trig}, echo_pin=${pinMapping.sensors.ultrasonic.echo})`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("touch_sensor")) {
-    definitions.push("# Touch Sensor Pin Definition");
     definitions.push(`TOUCH_PIN = Pin(${pinMapping.sensors.touch.pin}, Pin.IN)`);
     definitions.push("");
   }
   
   // Joystick pins
   if (usedBlocks.includes("joystick1")) {
-    definitions.push("# Joystick 1 Pin Definitions");
     definitions.push(`JOYSTICK1_V = ADC(Pin(${pinMapping.joystick.joystick1.vertical}))`);
     definitions.push(`JOYSTICK1_H = ADC(Pin(${pinMapping.joystick.joystick1.horizontal}))`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("joystick2")) {
-    definitions.push("# Joystick 2 Pin Definitions");
     definitions.push(`JOYSTICK2_V = ADC(Pin(${pinMapping.joystick.joystick2.vertical}))`);
     definitions.push(`JOYSTICK2_H = ADC(Pin(${pinMapping.joystick.joystick2.horizontal}))`);
     definitions.push("");
@@ -246,7 +233,6 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // OLED pins
   if (usedBlocks.some(b => b.startsWith("oled_"))) {
-    definitions.push("# OLED Display Pin Definitions");
     definitions.push(`I2C_SDA = Pin(${pinMapping.oled.sda})`);
     definitions.push(`I2C_SCL = Pin(${pinMapping.oled.scl})`);
     definitions.push(`i2c = SoftI2C(sda=I2C_SDA, scl=I2C_SCL)`);
@@ -256,7 +242,6 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // Servo pins
   if (usedBlocks.includes("servo_motor")) {
-    definitions.push("# Servo Motor Pin Definitions");
     definitions.push(`SERVO1_PIN = Pin(${pinMapping.servo.servo1.pin})`);
     definitions.push(`servo1 = servo.Servo(SERVO1_PIN)`);
     if (pinMapping.servo.servo2) {
@@ -279,31 +264,20 @@ function generateHelperFunctions(usedBlocks) {
   if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
     functions.push(`
 def set_motor(motor_id, speed, direction):
-    """
-    MicroPython function: Control DC motor speed and direction
-    motor_id: 'M1', 'M2', 'M3', or 'M4'
-    speed: 0-255 (PWM duty cycle)
-    direction: 'FORWARD' or 'REVERSE'
-    """
-    # MicroPython: Access global pin objects
     pin_a = globals()[f'M{motor_id[1]}_PIN_A']
     pin_b = globals()[f'M{motor_id[1]}_PIN_B']
     pwm = globals()[f'M{motor_id[1]}_PWM']
-    
-    # MicroPython: Convert speed (0-255) to PWM duty (0-1023 for ESP32)
     duty = int((speed / 255) * 1023)
-    pwm.duty(duty)  # MicroPython PWM duty method
-    
-    # MicroPython: Set pin values (not digitalWrite like Arduino)
+    pwm.duty(duty)
     if direction == 'FORWARD':
-        pin_a.value(1)  # MicroPython pin.value() method
+        pin_a.value(1)
         pin_b.value(0)
     elif direction == 'REVERSE':
         pin_a.value(0)
         pin_b.value(1)
     else:
         pin_a.value(0)
-        pin_b.value(0)  # Stop
+        pin_b.value(0)
 `);
   }
   
@@ -311,22 +285,16 @@ def set_motor(motor_id, speed, direction):
   if (usedBlocks.includes("ultrasonic_sensor")) {
     functions.push(`
 def read_ultrasonic():
-    """Read distance from ultrasonic sensor in cm"""
-    ULTRASONIC_TRIG.value(0)
-    time.sleep_us(2)
-    ULTRASONIC_TRIG.value(1)
-    time.sleep_us(10)
-    ULTRASONIC_TRIG.value(0)
-    
-    while ULTRASONIC_ECHO.value() == 0:
-        signal_off = time.ticks_us()
-    
-    while ULTRASONIC_ECHO.value() == 1:
-        signal_on = time.ticks_us()
-    
-    time_passed = signal_on - signal_off
-    distance = (time_passed * 0.034) / 2  # Distance in cm
-    return distance
+    """Read distance from ultrasonic sensor in cm (uses hcsr04 helper)"""
+    d = ULTRASONIC_SENSOR.distance_cm()
+    if d is None:
+        return 0
+    # Print for real-time monitoring on serial
+    try:
+        print("Ultrasonic:", round(d, 2), "cm")
+    except:
+        pass
+    return d
 `);
   }
   
@@ -334,75 +302,63 @@ def read_ultrasonic():
   if (usedBlocks.includes("ldr_sensor")) {
     functions.push(`
 def read_ldr():
-    """MicroPython function: Read LDR sensor value (0-4095 for ESP32 ADC)"""
-    return LDR_PIN.read()  # MicroPython: ADC.read() returns 0-4095 on ESP32
+    return LDR_PIN.read()
 `);
   }
   
   if (usedBlocks.includes("ir_sensor")) {
     functions.push(`
 def read_ir():
-    """MicroPython function: Read IR sensor value (digital)"""
-    # MicroPython: ESP32 ADC returns 0-4095, threshold at 2048
-    return IR_PIN.read() > 2048  # MicroPython ADC.read() method
+    return IR_PIN.read() > 2048
 `);
   }
   
   if (usedBlocks.includes("ir_sensor_analog")) {
     functions.push(`
 def read_ir_analog():
-    """MicroPython function: Read IR sensor analog value (0-4095 for ESP32)"""
-    return IR_PIN.read()  # MicroPython: ADC.read() returns 0-4095 on ESP32
+    return IR_PIN.read()
 `);
   }
   
   if (usedBlocks.includes("temp_sensor")) {
     functions.push(`
 def read_temperature():
-    """MicroPython function: Read temperature from DHT22 sensor"""
     if temp_sensor is None:
-        return 0.0  # Return default if sensor not initialized
+        return 0.0
     try:
-        temp_sensor.measure()  # MicroPython: DHT22.measure() method
-        return temp_sensor.temperature()  # MicroPython: DHT22.temperature() method
+        temp_sensor.measure()
+        return temp_sensor.temperature()
     except:
-        return 0.0  # Return default on error
+        return 0.0
 `);
   }
   
   if (usedBlocks.includes("touch_sensor")) {
     functions.push(`
 def read_touch():
-    """MicroPython function: Read touch sensor value"""
-    return TOUCH_PIN.value()  # MicroPython: Pin.value() method (not digitalRead)
+    return TOUCH_PIN.value()
 `);
   }
   
   if (usedBlocks.includes("joystick1")) {
     functions.push(`
 def read_joystick1():
-    """MicroPython function: Read Joystick 1 values (V, H)"""
-    # MicroPython: Returns dictionary with ADC readings (0-4095)
-    return {'V': JOYSTICK1_V.read(), 'H': JOYSTICK1_H.read()}  # MicroPython ADC.read()
+    return {'V': JOYSTICK1_V.read(), 'H': JOYSTICK1_H.read()}
 `);
   }
   
   if (usedBlocks.includes("joystick2")) {
     functions.push(`
 def read_joystick2():
-    """MicroPython function: Read Joystick 2 values (V, H)"""
-    # MicroPython: Returns dictionary with ADC readings (0-4095)
-    return {'V': JOYSTICK2_V.read(), 'H': JOYSTICK2_H.read()}  # MicroPython ADC.read()
+    return {'V': JOYSTICK2_V.read(), 'H': JOYSTICK2_H.read()}
 `);
   }
   
   if (usedBlocks.some(b => b.startsWith("oled_"))) {
     functions.push(`
 def show_on_oled(text, x, y, color='white'):
-    """MicroPython function: Display text on OLED at position (x, y)"""
-    # MicroPython: ssd1306 library methods
-    oled.text(str(text), x, y)  # MicroPython: oled.text() method
-    oled.show()  # MicroPython: oled.show() to update display
+    oled.text(str(text), x, y)
+    oled.show()
 `);
   }
   
@@ -426,20 +382,8 @@ function generateEnhancedPythonCode(workspace) {
   const requiredLibraries = getRequiredLibraries(usedBlocks);
   
   // Generate code sections
-  const header = `# ============================================
-# MY STEAM LAB - Generated MicroPython Code for ESP32
-# ============================================
+  const header = `# MY STEAM LAB - MicroPython Code for ESP32
 # Generated: ${new Date().toLocaleString()}
-# 
-# ⚠️ IMPORTANT: 
-# - This is MICROPYTHON code (not C/C++)
-# - Pin mappings are FIXED as per PIN MAPPING.pdf
-# - DO NOT MODIFY pin definitions - they are hardware-specific
-# - Pin mappings are defined in: config/pin_mapping.json
-# - Ensure pin numbers match PIN MAPPING.pdf exactly!
-# 
-# Ready to upload to ESP32 Dev Board via MicroPython
-# ============================================
 
 `;
   
@@ -498,10 +442,10 @@ function generateEnhancedPythonCode(workspace) {
       }).join('\n');
       
       // MicroPython main loop structure
-      mainCode = `def main():\n${indentedCode}\n\n# MicroPython main loop (ESP32 compatible)\nwhile True:\n    main()\n    time.sleep(0.1)  # Small delay to prevent ESP32 watchdog timeout\n`;
+      mainCode = `def main():\n${indentedCode}\n\nwhile True:\n    main()\n    time.sleep(0.1)\n`;
     }
   } else {
-    mainCode = `# No blocks detected - add your MicroPython code here\npass\n`;
+    mainCode = `pass\n`;
   }
   
   // Combine all sections

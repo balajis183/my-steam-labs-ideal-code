@@ -152,105 +152,136 @@ async function isPortAvailable(portPath) {
 async function releaseComPortIfNeeded(portPath) {
   try {
     console.log(`🔄 Releasing port ${portPath}...`);
+    safeSend('terminal-output', `🔄 Closing serial monitor to free COM port...`);
     
-    // Close our open handle if any
-    if (currentPort && currentPort.isOpen) {
-      console.log('🔄 Closing current port...');
+    // Close our open handle if any - CRITICAL: Must close before mpremote can use it
+    if (currentPort) {
+      console.log('🔄 Closing current serial port...');
       try {
-        await new Promise(res => currentPort.close(() => res()));
-        currentPort.destroy();
+        // Remove all event listeners first to prevent callbacks
+        currentPort.removeAllListeners();
+        
+        // Close the port
+        if (currentPort.isOpen) {
+          await new Promise((res, rej) => {
+            const timeout = setTimeout(() => {
+              console.log('⚠️ Port close timeout, forcing destroy...');
+              res(); // Continue even if close times out
+            }, 2000);
+            
+            currentPort.close((err) => {
+              clearTimeout(timeout);
+              if (err) {
+                console.log(`Warning: Error closing port: ${err.message}`);
+              }
+              res();
+            });
+          });
+        }
+        
+        // Destroy the port object completely
+        try {
+          currentPort.destroy();
+        } catch (destroyErr) {
+          console.log(`Warning: Error destroying port: ${destroyErr.message}`);
+        }
+        
         currentPort = null;
+        safeSend('terminal-output', '[Serial Port Closed]');
       } catch (closeErr) {
         console.log(`Warning: Error closing current port: ${closeErr.message}`);
+        // Force destroy even if close failed
+        try {
+          if (currentPort) {
+            currentPort.destroy();
+            currentPort = null;
+          }
+        } catch (e) {
+          console.log(`Warning: Error in force destroy: ${e.message}`);
+        }
       }
     }
 
     // Kill potential conflicting processes (Python/mpremote) silently
     if (os.platform() === 'win32') {
       try {
-        exec('taskkill /f /im "python.exe" 2>nul', () => {});
-        exec('taskkill /f /im "mpremote.exe" 2>nul', () => {});
+        // Kill any Python processes that might be holding the port
+        await new Promise((resolve) => {
+          exec('taskkill /f /im python.exe 2>nul', () => {
+            exec('taskkill /f /im mpremote.exe 2>nul', () => {
+              setTimeout(resolve, 500); // Wait for processes to die
+            });
+          });
+        });
       } catch (killErr) {
         console.log(`Warning: Error killing processes: ${killErr.message}`);
       }
     }
 
-    // Give the OS time to actually free the handle
-    await delay(2000);
+    // CRITICAL: Give Windows enough time to actually free the COM port handle
+    // Windows COM ports can take several seconds to fully release
+    safeSend('terminal-output', `⏳ Waiting for port to be released...`);
+    await delay(4000); // Slightly longer wait for stubborn port locks
+    
     console.log(`✅ Port ${portPath} released successfully`);
+    safeSend('terminal-output', `✅ Port ${portPath} released, ready for upload`);
   } catch (error) {
     console.error(`❌ Error releasing port ${portPath}:`, error.message);
+    safeSend('terminal-output', `⚠️ Warning: Port release had issues: ${error.message}`);
   }
 }
 
-// Utility: capture serial output during mpremote execution
+// Utility: capture output from mpremote command (DO NOT open serial port - mpremote handles it)
 async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
   return new Promise(async (resolve) => {
-    let output = '';
     let commandCompleted = false;
-    let serialPort = null;
     
     try {
-      // Open serial port to capture ESP32 output
-      serialPort = new SerialPort({ 
-        path: portPath, 
-        baudRate: ESP32_BAUD_RATE,  // Fixed: 115200 for this ESP32 board
-        autoOpen: false 
-      });
+      // CRITICAL: Close any existing serial port connection BEFORE mpremote uses it
+      // mpremote needs exclusive access to the COM port
+      if (currentPort && currentPort.isOpen) {
+        console.log('🔄 Closing existing serial port before mpremote...');
+        try {
+          await new Promise(r => {
+            currentPort.close(() => {
+              currentPort.destroy();
+              currentPort = null;
+              r();
+            });
+          });
+          // Give OS time to release the port
+          await delay(1000);
+        } catch (closeErr) {
+          console.log(`Warning: Error closing port: ${closeErr.message}`);
+        }
+      }
       
-      // Set up serial data handler
-      serialPort.on('data', (data) => {
-        const dataStr = data.toString();
-        output += dataStr;
-        safeSend('serial-data', dataStr);
-      });
-      
-      // Open serial port
-      await new Promise((res, rej) => {
-        serialPort.open((err) => {
-          if (err) rej(err);
-          else res();
-        });
-      });
-      
-      // Wait a moment for port to stabilize
-      await delay(1000);
-      
-      // Execute the mpremote command
+      // Execute the mpremote command (mpremote handles serial communication itself)
       exec(command, { timeout: timeoutMs }, (err, stdout, stderr) => {
         commandCompleted = true;
         
         if (err) {
-          safeSend('serial-data', `\n[Command Error]: ${stderr || stdout || err.message}\n`);
-          resolve({ success: false, error: stderr || stdout || err.message, output });
+          const errorMsg = stderr || stdout || err.message;
+          safeSend('terminal-output', `\n[Command Error]: ${errorMsg}\n`);
+          resolve({ success: false, error: errorMsg, output: stdout || stderr });
         } else {
-          safeSend('serial-data', `\n[Command Output]: ${stdout}\n`);
-          resolve({ success: true, stdout: stdout, output });
+          safeSend('terminal-output', `\n[Command Output]: ${stdout || ''}\n`);
+          resolve({ success: true, stdout: stdout, output: stdout });
         }
       });
       
-      // Set timeout to close serial port
+      // Set timeout
       setTimeout(() => {
         if (!commandCompleted) {
           commandCompleted = true;
-          resolve({ success: false, error: 'Command timed out', output });
+          resolve({ success: false, error: 'Command timed out', output: '' });
         }
       }, timeoutMs);
       
     } catch (error) {
       commandCompleted = true;
-      safeSend('serial-data', `\n[Execution Error]: ${error.message}\n`);
-      resolve({ success: false, error: error.message, output });
-    } finally {
-      // Clean up serial port
-      if (serialPort && serialPort.isOpen) {
-        try {
-          serialPort.close();
-          serialPort.destroy();
-        } catch (closeErr) {
-          console.log(`Warning: Error closing serial port: ${closeErr.message}`);
-        }
-      }
+      safeSend('terminal-output', `\n[Execution Error]: ${error.message}\n`);
+      resolve({ success: false, error: error.message, output: '' });
     }
   });
 }
@@ -487,6 +518,25 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-upload-'));
     const pyPath = path.join(tmpDir, 'main.py');
     fs.writeFileSync(pyPath, code, 'utf-8');
+    const helperFiles = [
+      { key: 'hcsr04', path: path.join(__dirname, '..', 'micropython_libraries', 'hcsr04.py') },
+      { key: 'tcs34725', path: path.join(__dirname, '..', 'micropython_libraries', 'tcs34725.py') },
+      { key: 'ssd1306', path: path.join(__dirname, '..', 'micropython_libraries', 'ssd1306.py') },
+      { key: 'servo', path: path.join(__dirname, '..', 'micropython_libraries', 'servo.py') },
+      { key: 'dht', path: path.join(__dirname, '..', 'micropython_libraries', 'dht.py') },
+      { key: 'onewire', path: path.join(__dirname, '..', 'micropython_libraries', 'onewire.py') },
+      { key: 'ds18x20', path: path.join(__dirname, '..', 'micropython_libraries', 'ds18x20.py') },
+      { key: 'utils', path: path.join(__dirname, '..', 'micropython_libraries', 'utils.py') },
+    ];
+    const detectHelperFiles = (codeStr) => {
+      const needed = [];
+      helperFiles.forEach(f => {
+        if (codeStr.includes(`import ${f.key}`)) {
+          needed.push(f);
+        }
+      });
+      return needed;
+    };
     
     return await new Promise(async (res) => {
       try {
@@ -500,8 +550,12 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
           return;
         }
         
-        // Release port and reset ESP32 first
+        // CRITICAL: Release port FIRST before any mpremote operations
+        // The serial monitor must be closed or mpremote will fail with "port in use"
         await releaseComPortIfNeeded(port);
+        
+        // Additional delay to ensure port is fully released on Windows
+        await delay(1000);
         
         // Reset ESP32 to ensure clean state (helps with "could not enter raw repl" error)
         safeSend('terminal-output', '🔄 Resetting ESP32 to ensure clean connection...');
@@ -520,6 +574,23 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
         // Upload with retry logic for "could not enter raw repl" error
         safeSend('terminal-output', '🚀 Uploading code to ESP32...');
         
+        // Upload helper libraries if referenced in code
+        const helpersNeeded = detectHelperFiles(code);
+        for (const helper of helpersNeeded) {
+          try {
+            safeSend('terminal-output', `📦 Uploading dependency: ${helper.key}.py`);
+            const uploadHelperCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${helper.path.replace(/\\/g, '/')}" :${helper.key}.py`;
+            const helperResult = await captureSerialOutput(port, uploadHelperCmd, 15000);
+            if (!helperResult.success) {
+              safeSend('terminal-output', `⚠️ Failed to upload ${helper.key}.py: ${helperResult.error || 'Unknown error'}`);
+            }
+          } catch (helperErr) {
+            safeSend('terminal-output', `⚠️ Error uploading ${helper.key}.py: ${helperErr.message}`);
+          }
+          // small gap
+          await delay(500);
+        }
+        
         let uploadResult = null;
         let retryCount = 0;
         const maxRetries = 3;
@@ -536,6 +607,14 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
             } catch (e) {}
           }
           
+          // Pre-flight: verify port is actually free before mpremote uses it
+          const available = await isPortAvailable(port);
+          if (!available) {
+            safeSend('terminal-output', `⚠️ Port ${port} still busy, releasing again...`);
+            await releaseComPortIfNeeded(port);
+            await delay(3000); // Extra wait for Windows
+          }
+          
           const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
           console.log(`Executing (attempt ${retryCount + 1}): ${uploadCommand}`);
           
@@ -544,6 +623,19 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
           if (!uploadResult.success) {
             const isReplError = uploadResult.error?.includes('could not enter raw repl') || 
                                uploadResult.error?.includes('TransportError');
+            const isPortInUse = uploadResult.error?.includes('failed to access') || 
+                               uploadResult.error?.includes('it may be in use') ||
+                               uploadResult.error?.includes('Access denied') ||
+                               uploadResult.error?.toLowerCase().includes('in use');
+            
+            // If port is in use, release it again and retry
+            if (isPortInUse && retryCount < maxRetries - 1) {
+              retryCount++;
+              safeSend('terminal-output', `⚠️ Port still in use, releasing again and retrying (${retryCount}/${maxRetries})...`);
+              await releaseComPortIfNeeded(port);
+              await delay(3000); // Longer delay for Windows
+              continue; // Retry
+            }
             
             if (isReplError && retryCount < maxRetries - 1) {
               retryCount++;
@@ -554,7 +646,16 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
               
               // Provide helpful error message
               let errorMsg = uploadResult.error;
-              if (isReplError) {
+              if (isPortInUse) {
+                errorMsg = `COM Port ${port} is in use by another program.\n\n` +
+                          `💡 Troubleshooting steps:\n` +
+                          `1. Close ALL programs using COM${port} (Arduino IDE, serial monitors, etc.)\n` +
+                          `2. Close the serial monitor in this app (it will reopen after upload)\n` +
+                          `3. Unplug and replug the USB cable\n` +
+                          `4. Press the RESET button on your ESP32 board\n` +
+                          `5. Wait 5 seconds, then try uploading again\n` +
+                          `6. Restart the application if problem persists`;
+              } else if (isReplError) {
                 errorMsg = `ESP32 communication error: Could not enter raw REPL mode.\n\n` +
                           `💡 Troubleshooting steps:\n` +
                           `1. Press the RESET button on your ESP32 board\n` +

@@ -650,6 +650,17 @@ async function uploadCode() {
     return;
   }
   
+  // CRITICAL: Close serial monitor before upload (mpremote needs exclusive port access)
+  if (currentPort && language === 'python') {
+    appendTerminalOutput(`🔄 Closing serial monitor to free COM port for upload...`);
+    try {
+      await window.electronAPI.closeSerialPort();
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay
+    } catch (closeErr) {
+      console.log(`Warning: Error closing serial port: ${closeErr.message}`);
+    }
+  }
+  
   appendTerminalOutput(`📤 Uploading ${language} code to ${currentPort}...`);
   
   try {
@@ -678,12 +689,32 @@ async function uploadCode() {
     if (result.success) {
       appendTerminalOutput(`✅ Upload successful!`);
       appendTerminalOutput(result.output || 'No output');
+      
+      // Reopen serial monitor after successful upload (for Python/ESP32)
+      if (language === 'python' && currentPort) {
+        appendTerminalOutput(`🔄 Reopening serial monitor...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait a bit
+        await selectPort(currentPort, true); // Silent reconnect
+        appendTerminalOutput(`✅ Serial monitor reopened - you can see ESP32 output now`);
+      }
     } else {
       appendTerminalOutput(`❌ Upload failed:`);
       appendTerminalOutput(result.error);
+      
+      // Reopen serial monitor even on failure (for Python/ESP32)
+      if (language === 'python' && currentPort) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await selectPort(currentPort, true);
+      }
     }
   } catch (error) {
     appendTerminalOutput(`❌ Upload error: ${error.message}`);
+    
+    // Reopen serial monitor on error (for Python/ESP32)
+    if (language === 'python' && currentPort) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      await selectPort(currentPort, true);
+    }
   }
   finally {
     isUploading = false;
@@ -904,22 +935,34 @@ async function selectPort(portPath, silent = false) {
     }
     if (!silent) {
       appendTerminalOutput(`✅ Connected to ${portPath}`);
+      appendTerminalOutput(`ℹ️ Serial Monitor Active - Any output from ESP32 will appear here`);
+      appendTerminalOutput(`💡 Tip: If you see repeated messages, there's code running on ESP32`);
+      appendTerminalOutput(`💡 Upload new code to replace what's currently running`);
     }
   } else {
     console.error(`❌ Failed to connect to ${portPath}: ${result.error}`);
     appendTerminalOutput(`❌ Failed to connect to ${portPath}: ${result.error}`);
+    // If access denied, provide actionable tips
+    const lowerErr = (result.error || '').toLowerCase();
+    if (lowerErr.includes('access denied') || lowerErr.includes('in use')) {
+      appendTerminalOutput(`💡 Port is busy. Try:\n- Close other serial monitors (Arduino IDE, etc.)\n- Unplug/replug the USB cable\n- Wait 5 seconds, then click Refresh Ports and select again`);
+    }
   }
 }
 
 // Event listeners for serial data - Enhanced Serial Monitor
 window.electronAPI.onSerialData((data) => {
   // Display serial data in terminal (Serial Monitor)
-  appendTerminalOutput(data);
-  
-  // Auto-scroll to bottom
-  const terminalOutput = document.getElementById('terminal-output');
-  if (terminalOutput) {
-    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  // Filter out empty lines and normalize whitespace
+  const trimmedData = data.trim();
+  if (trimmedData) {
+    appendTerminalOutput(trimmedData);
+    
+    // Auto-scroll to bottom
+    const terminalOutput = document.getElementById('terminal-output');
+    if (terminalOutput) {
+      terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    }
   }
 });
 
