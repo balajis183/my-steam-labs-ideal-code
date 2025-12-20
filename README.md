@@ -21,6 +21,13 @@ A code-generation workspace powered by Blockly with multi-language output (JavaS
 - **Multi-language Responses**: Language-specific compilation and execution feedback
 - **Error Handling**: Comprehensive error reporting in terminal
 
+## Operating Mode (read this first)
+- **MicroPython only**: Targets ESP32 + MicroPython. Skip Compile for Python; use Upload/Run.
+- **Fixed baud**: 115200 for serial/REPL/upload.
+- **Fixed pins**: `config/pin_mapping.json` + `config/code_generator.js` must match `PIN MAPPING.pdf` (see summary below).
+- **Arduino-like flow**: Refresh/select port → Upload → open Serial Monitor after upload. If old code is still running (buzzer/distance/touch spam), upload a blank `main.py` (`pass`) or erase flash, then upload fresh.
+- **Port busy / raw REPL errors**: Close all serial monitors, unplug/replug with a data cable, press RESET (BOOT+RESET if needed), then upload again.
+
 ### 🎯 Core Functionality
 
 #### Compile
@@ -126,10 +133,10 @@ This will check:
 
 1. **Connect ESP32** via USB cable
 2. **Flash MicroPython** to ESP32 (if not already done)
-3. **Generate Python code** in the application
-4. **Select ESP32 port** from dropdown
-5. **Upload code** - it will be transferred to ESP32
-6. **Run code** - executes directly on ESP32
+3. **Refresh/select the ESP32 port** from dropdown
+4. **Generate Python code** in the application
+5. **Upload** (MicroPython is interpreted; no Compile needed)
+6. **Open Serial Monitor after upload** to see the new program’s output
 
 ### Arduino Boards
 
@@ -377,3 +384,20 @@ The terminal system uses IPC communication to display real-time output from main
 
 ### Hardware Testing
 Run `node test_hardware.js` to verify your hardware setup and dependencies are properly configured. 
+
+## Quick Troubleshooting (ESP32 MicroPython)
+- **Port busy / could not enter raw repl**: Close all serial monitors (including this app), unplug/replug with a known-good data cable, press RESET (BOOT+RESET if needed), then Upload.
+- **Seeing old output (buzzer on, distance: 0, touch spam)**: Upload a blank `main.py` (`pass`) to clear the previous program, or erase flash/re-flash MicroPython, then upload fresh.
+- **Board not detected**: Click Refresh Ports and select the COM port that appears. If none shows, check Device Manager, cable, and drivers.
+
+## Fixed Pins (must match PIN MAPPING.pdf)
+- Motors: M1 19/18, M2 5/17, M3 23/22, M4 21/16
+- Sensors: LDR 34, IR 35, Temp 32, Ultrasonic TRIG 33 / ECHO 32, Touch 12
+- Joysticks: J1 V=4 H=2, J2 V=26 H=25
+- OLED: SDA 13, SCL 15
+
+## Minimal Test Checklist
+- Generate Python → dropdown shows Python/MicroPython
+- Upload (not Compile) with a selected COM port
+- Serial Monitor opens after upload and shows only the newly uploaded program’s output
+- Pin definitions in generated code match the fixed list above
