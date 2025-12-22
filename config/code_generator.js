@@ -441,8 +441,8 @@ function generateEnhancedPythonCode(workspace) {
         return '    ' + line;
       }).join('\n');
       
-      // MicroPython main loop structure
-      mainCode = `def main():\n${indentedCode}\n\nwhile True:\n    main()\n    time.sleep(0.1)\n`;
+      // MicroPython main loop structure with interrupt guard
+      mainCode = `def main():\n${indentedCode}\n\ntry:\n    while True:\n        main()\n        time.sleep(0.1)\nexcept KeyboardInterrupt:\n    print("Program stopped")\n    pass\n`;
     }
   } else {
     mainCode = `pass\n`;

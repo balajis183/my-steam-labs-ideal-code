@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compileJavaScript: (code) => ipcRenderer.invoke('compile-javascript', code),
   compileCpp: (code) => ipcRenderer.invoke('compile-cpp', code),
   compileC: (code) => ipcRenderer.invoke('compile-c', code),
+  // Python formatting (black)
+  formatPython: (code) => ipcRenderer.invoke('format-python', code),
   
   // Multi-Language Upload Functions
   uploadPython: (code, port) => ipcRenderer.invoke('upload-python', code, port),

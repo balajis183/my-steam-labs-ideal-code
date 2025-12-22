@@ -59,6 +59,33 @@ async function findPythonPath() {
 // This is the fixed serial communication speed - DO NOT CHANGE
 const ESP32_BAUD_RATE = 115200;
 
+// Send Ctrl+C/Ctrl+D to try to drop into raw REPL before mpremote uses the port
+async function pokeRawRepl(portPath) {
+  return new Promise((resolve) => {
+    try {
+      const p = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      p.open((err) => {
+        if (err) {
+          console.log(`Warning: pokeRawRepl open failed: ${err.message}`);
+          return resolve();
+        }
+        const payload = Buffer.from([0x03, 0x03, 0x04]); // ctrl-C ctrl-C ctrl-D
+        p.write(payload, () => {
+          setTimeout(() => {
+            p.close(() => {
+              try { p.destroy(); } catch {}
+              resolve();
+            });
+          }, 200);
+        });
+      });
+    } catch (e) {
+      console.log(`Warning: pokeRawRepl exception: ${e.message}`);
+      resolve();
+    }
+  });
+}
+
 // Utility: check and install mpremote if needed
 async function ensureMpremoteInstalled(pythonPath) {
   try {
@@ -158,39 +185,28 @@ async function releaseComPortIfNeeded(portPath) {
     if (currentPort) {
       console.log('🔄 Closing current serial port...');
       try {
-        // Remove all event listeners first to prevent callbacks
         currentPort.removeAllListeners();
-        
-        // Close the port
         if (currentPort.isOpen) {
-          await new Promise((res, rej) => {
+          await new Promise((res) => {
             const timeout = setTimeout(() => {
               console.log('⚠️ Port close timeout, forcing destroy...');
-              res(); // Continue even if close times out
+              res();
             }, 2000);
-            
-            currentPort.close((err) => {
+            currentPort.close(() => {
               clearTimeout(timeout);
-              if (err) {
-                console.log(`Warning: Error closing port: ${err.message}`);
-              }
               res();
             });
           });
         }
-        
-        // Destroy the port object completely
         try {
           currentPort.destroy();
         } catch (destroyErr) {
           console.log(`Warning: Error destroying port: ${destroyErr.message}`);
         }
-        
         currentPort = null;
         safeSend('terminal-output', '[Serial Port Closed]');
       } catch (closeErr) {
         console.log(`Warning: Error closing current port: ${closeErr.message}`);
-        // Force destroy even if close failed
         try {
           if (currentPort) {
             currentPort.destroy();
@@ -202,26 +218,9 @@ async function releaseComPortIfNeeded(portPath) {
       }
     }
 
-    // Kill potential conflicting processes (Python/mpremote) silently
-    if (os.platform() === 'win32') {
-      try {
-        // Kill any Python processes that might be holding the port
-        await new Promise((resolve) => {
-          exec('taskkill /f /im python.exe 2>nul', () => {
-            exec('taskkill /f /im mpremote.exe 2>nul', () => {
-              setTimeout(resolve, 500); // Wait for processes to die
-            });
-          });
-        });
-      } catch (killErr) {
-        console.log(`Warning: Error killing processes: ${killErr.message}`);
-      }
-    }
-
-    // CRITICAL: Give Windows enough time to actually free the COM port handle
-    // Windows COM ports can take several seconds to fully release
+    // Wait for OS to release the handle
     safeSend('terminal-output', `⏳ Waiting for port to be released...`);
-    await delay(4000); // Slightly longer wait for stubborn port locks
+    await delay(800); // keep short; Windows usually frees in <1s if handle is destroyed
     
     console.log(`✅ Port ${portPath} released successfully`);
     safeSend('terminal-output', `✅ Port ${portPath} released, ready for upload`);
@@ -229,6 +228,37 @@ async function releaseComPortIfNeeded(portPath) {
     console.error(`❌ Error releasing port ${portPath}:`, error.message);
     safeSend('terminal-output', `⚠️ Warning: Port release had issues: ${error.message}`);
   }
+}
+
+// Utility: quick hard reset using DTR/RTS (keep GPIO0 high)
+async function hardResetPort(portPath) {
+  return new Promise((resolve) => {
+    try {
+      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      resetPort.open((err) => {
+        if (err) {
+          console.log(`Warning: hardResetPort open failed: ${err.message}`);
+          return resolve();
+        }
+        // RTS low (reset), DTR high (GPIO0 high), then release reset
+        resetPort.set({ dtr: true, rts: false }, () => {
+          setTimeout(() => {
+            resetPort.set({ dtr: true, rts: true }, () => {
+              setTimeout(() => {
+                resetPort.close(() => {
+                  try { resetPort.destroy(); } catch {}
+                  resolve();
+                });
+              }, 200);
+            });
+          }, 120);
+        });
+      });
+    } catch (e) {
+      console.log(`Warning: hardResetPort exception: ${e.message}`);
+      resolve();
+    }
+  });
 }
 
 // Utility: capture output from mpremote command (DO NOT open serial port - mpremote handles it)
@@ -506,6 +536,38 @@ ipcMain.handle('compile-c', async (_e, code) => {
   }
 });
 
+// ---- Python Formatter (black) ----
+ipcMain.handle('format-python', async (_e, code) => {
+  try {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-format-'));
+    const pyPath = path.join(tmpDir, 'main.py');
+    fs.writeFileSync(pyPath, code, 'utf-8');
+
+    return await new Promise(async (res) => {
+      try {
+        const pythonPath = await findPythonPath();
+        const formatCmd = `"${pythonPath}" -m black --quiet --fast "${pyPath}"`;
+        exec(formatCmd, { timeout: 15000 }, (err, out, errOut) => {
+          if (err) {
+            res({ success: false, error: errOut || out || err.message });
+          } else {
+            try {
+              const formatted = fs.readFileSync(pyPath, 'utf-8');
+              res({ success: true, code: formatted });
+            } catch (readErr) {
+              res({ success: false, error: readErr.message });
+            }
+          }
+        });
+      } catch (pythonError) {
+        res({ success: false, error: `Python not found: ${pythonError.message}` });
+      }
+    });
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 // ---- Multi-Language Upload Functions ----
 ipcMain.handle('upload-python', async (_e, code, port) => {
   try {
@@ -551,26 +613,13 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
         }
         
         // CRITICAL: Release port FIRST before any mpremote operations
-        // The serial monitor must be closed or mpremote will fail with "port in use"
         await releaseComPortIfNeeded(port);
-        
-        // Additional delay to ensure port is fully released on Windows
-        await delay(1000);
-        
-        // Reset ESP32 to ensure clean state (helps with "could not enter raw repl" error)
+        await delay(600);
+        // Hardware reset to ensure we are out of user loops
         safeSend('terminal-output', '🔄 Resetting ESP32 to ensure clean connection...');
-        try {
-          const resetCommand = `"${pythonPath}" -m mpremote connect ${port} reset`;
-          await new Promise((resolve, reject) => {
-            exec(resetCommand, { timeout: 5000 }, (err) => {
-              // Ignore errors on reset - ESP32 might not respond, that's okay
-              setTimeout(resolve, 2000); // Wait 2 seconds after reset
-            });
-          });
-        } catch (resetErr) {
-          console.log('Reset command completed (errors are normal)');
-        }
-        
+        await hardResetPort(port);
+        await delay(300);
+
         // Upload with retry logic for "could not enter raw repl" error
         safeSend('terminal-output', '🚀 Uploading code to ESP32...');
         
@@ -591,113 +640,44 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
           await delay(500);
         }
         
-        let uploadResult = null;
-        let retryCount = 0;
-        const maxRetries = 3;
-        
-        while (retryCount < maxRetries && !uploadResult?.success) {
-          if (retryCount > 0) {
-            safeSend('terminal-output', `🔄 Retry ${retryCount}/${maxRetries - 1} - Resetting ESP32 and retrying...`);
-            // Reset again before retry
-            try {
-              const resetCmd = `"${pythonPath}" -m mpremote connect ${port} reset`;
-              await new Promise((resolve) => {
-                exec(resetCmd, { timeout: 5000 }, () => setTimeout(resolve, 2000));
-              });
-            } catch (e) {}
-          }
-          
-          // Pre-flight: verify port is actually free before mpremote uses it
-          const available = await isPortAvailable(port);
-          if (!available) {
-            safeSend('terminal-output', `⚠️ Port ${port} still busy, releasing again...`);
-            await releaseComPortIfNeeded(port);
-            await delay(3000); // Extra wait for Windows
-          }
-          
-          const uploadCommand = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
-          console.log(`Executing (attempt ${retryCount + 1}): ${uploadCommand}`);
-          
-          uploadResult = await captureSerialOutput(port, uploadCommand, 15000);
-          
-          if (!uploadResult.success) {
-            const isReplError = uploadResult.error?.includes('could not enter raw repl') || 
-                               uploadResult.error?.includes('TransportError');
-            const isPortInUse = uploadResult.error?.includes('failed to access') || 
-                               uploadResult.error?.includes('it may be in use') ||
-                               uploadResult.error?.includes('Access denied') ||
-                               uploadResult.error?.toLowerCase().includes('in use');
-            
-            // If port is in use, release it again and retry
-            if (isPortInUse && retryCount < maxRetries - 1) {
-              retryCount++;
-              safeSend('terminal-output', `⚠️ Port still in use, releasing again and retrying (${retryCount}/${maxRetries})...`);
-              await releaseComPortIfNeeded(port);
-              await delay(3000); // Longer delay for Windows
-              continue; // Retry
-            }
-            
-            if (isReplError && retryCount < maxRetries - 1) {
-              retryCount++;
-              continue; // Retry
-            } else {
-              // Final failure or non-repl error
-              console.error('❌ Upload failed:', uploadResult.error);
-              
-              // Provide helpful error message
-              let errorMsg = uploadResult.error;
-              if (isPortInUse) {
-                errorMsg = `COM Port ${port} is in use by another program.\n\n` +
-                          `💡 Troubleshooting steps:\n` +
-                          `1. Close ALL programs using COM${port} (Arduino IDE, serial monitors, etc.)\n` +
-                          `2. Close the serial monitor in this app (it will reopen after upload)\n` +
-                          `3. Unplug and replug the USB cable\n` +
-                          `4. Press the RESET button on your ESP32 board\n` +
-                          `5. Wait 5 seconds, then try uploading again\n` +
-                          `6. Restart the application if problem persists`;
-              } else if (isReplError) {
-                errorMsg = `ESP32 communication error: Could not enter raw REPL mode.\n\n` +
-                          `💡 Troubleshooting steps:\n` +
-                          `1. Press the RESET button on your ESP32 board\n` +
-                          `2. Unplug and replug the USB cable\n` +
-                          `3. Make sure no other program is using COM${port}\n` +
-                          `4. Check that ESP32 has MicroPython firmware installed\n` +
-                          `5. Try a different USB cable or port\n` +
-                          `6. Wait 5 seconds and try again`;
-              }
-              
-              safeSend('terminal-output', `❌ Upload failed: ${errorMsg}`);
-              res({ success: false, error: errorMsg });
-              return;
-            }
-          }
+        // Deterministic, single-pass sequence (no parallel attempts)
+        // Small pause after hard reset to let MicroPython boot
+        await delay(1200);
+        await pokeRawRepl(port);
+
+        // Push main.py with one retry on raw repl failure
+        const fsCpCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
+        let fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
+        if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
+          // Retry after another hard reset and longer delay
+          await hardResetPort(port);
+          await delay(1400);
+          await pokeRawRepl(port);
+          fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
         }
-        
-        if (!uploadResult || !uploadResult.success) {
-          res({ success: false, error: 'Upload failed after multiple retries' });
+        if (!fsResult.success) {
+          res({ success: false, error: fsResult.error || 'Upload failed (fs cp)' });
           return;
         }
-        
-        console.log('✅ Upload successful');
-        safeSend('terminal-output', '✅ Upload successful!');
-        
-        // Small delay to ensure port stability
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Now execute the uploaded code and capture output
-        safeSend('terminal-output', '🚀 Executing uploaded code...');
-        const execCommand = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('main.py').read())"`;
-        console.log(`Executing: ${execCommand}`);
-        
-        const execResult = await captureSerialOutput(port, execCommand, 30000);
-        if (execResult.success) {
-          safeSend('terminal-output', '📋 Code execution output:');
-          safeSend('terminal-output', execResult.stdout || 'No output');
-          res({ success: true, output: execResult.stdout || 'No output' });
-        } else {
-          safeSend('terminal-output', `❌ Code execution failed: ${execResult.error}`);
-          res({ success: false, error: execResult.error });
+        await delay(300);
+
+        // Execute once (optional; keeps monitor closed until we reopen)
+        const execCmd = `"${pythonPath}" -m mpremote connect ${port} exec "exec(open('main.py').read())"`;
+        let execResult = await captureSerialOutput(port, execCmd, 20000);
+        if (!execResult.success && (execResult.error || '').includes('could not enter raw repl')) {
+          await hardResetPort(port);
+          await delay(1400);
+          await pokeRawRepl(port);
+          execResult = await captureSerialOutput(port, execCmd, 20000);
         }
+        if (!execResult.success) {
+          res({ success: false, error: execResult.error || 'Execution failed' });
+          return;
+        }
+
+        console.log('✅ Upload + exec successful');
+        safeSend('terminal-output', '✅ Upload successful!');
+        res({ success: true, output: 'Upload and execution completed' });
       } catch (pythonError) {
         safeSend('terminal-output', `❌ Python not found: ${pythonError.message}`);
         res({ success: false, error: `Python not found: ${pythonError.message}` });

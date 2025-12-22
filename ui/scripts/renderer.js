@@ -565,7 +565,7 @@ async function uploadCode() {
   const uploadBtn = document.getElementById('uploadBtn');
   if (uploadBtn) uploadBtn.disabled = true;
   if (runBtn) runBtn.disabled = true;
-  const code = getCurrentCode();
+  let code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
@@ -579,26 +579,23 @@ async function uploadCode() {
     return;
   }
   
-  // For Python: Compile first before uploading
+  // For Python/MicroPython: optionally format with black, skip host compilation
   if (language === 'python') {
-    appendTerminalOutput('🔄 Compiling Python code before upload...');
     try {
-      const compileResult = await window.electronAPI.compilePython(code);
-      if (!compileResult.success) {
-        appendTerminalOutput('❌ Compilation failed. Please fix errors before uploading.');
-        appendTerminalOutput(compileResult.error);
-        isUploading = false;
-        if (uploadBtn) uploadBtn.disabled = false;
-        if (runBtn) runBtn.disabled = false;
-        return;
+      const fmt = await window.electronAPI.formatPython(code);
+      if (fmt && fmt.success && fmt.code) {
+        code = fmt.code;
+        // Update editor to show formatted code if available
+        const editorWindow = document.getElementById('monacoEditor').contentWindow;
+        if (editorWindow && editorWindow.setEditorValue) {
+          editorWindow.setEditorValue(code);
+        }
+        appendTerminalOutput('🧹 Code formatted (black --fast).');
+      } else if (fmt && !fmt.success) {
+        appendTerminalOutput(`⚠️ Formatter not applied: ${fmt.error || 'unknown error'}`);
       }
-      appendTerminalOutput('✅ Compilation successful. Proceeding with upload...');
-    } catch (compileError) {
-      appendTerminalOutput(`❌ Compilation error: ${compileError.message}`);
-      isUploading = false;
-      if (uploadBtn) uploadBtn.disabled = false;
-      if (runBtn) runBtn.disabled = false;
-      return;
+    } catch (fmtErr) {
+      appendTerminalOutput(`⚠️ Formatter error: ${fmtErr.message}`);
     }
   }
   
@@ -690,31 +687,19 @@ async function uploadCode() {
       appendTerminalOutput(`✅ Upload successful!`);
       appendTerminalOutput(result.output || 'No output');
       
-      // Reopen serial monitor after successful upload (for Python/ESP32)
+      // Open serial monitor after successful upload (for Python/ESP32)
       if (language === 'python' && currentPort) {
-        appendTerminalOutput(`🔄 Reopening serial monitor...`);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait a bit
-        await selectPort(currentPort, true); // Silent reconnect
-        appendTerminalOutput(`✅ Serial monitor reopened - you can see ESP32 output now`);
+        appendTerminalOutput(`🔄 Opening serial monitor...`);
+        await new Promise(resolve => setTimeout(resolve, 800)); // wait a bit
+        await openSerialMonitor(currentPort, true);
+        appendTerminalOutput(`✅ Serial monitor opened - you can see ESP32 output now`);
       }
     } else {
       appendTerminalOutput(`❌ Upload failed:`);
       appendTerminalOutput(result.error);
-      
-      // Reopen serial monitor even on failure (for Python/ESP32)
-      if (language === 'python' && currentPort) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await selectPort(currentPort, true);
-      }
     }
   } catch (error) {
     appendTerminalOutput(`❌ Upload error: ${error.message}`);
-    
-    // Reopen serial monitor on error (for Python/ESP32)
-    if (language === 'python' && currentPort) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      await selectPort(currentPort, true);
-    }
   }
   finally {
     isUploading = false;
@@ -913,40 +898,35 @@ async function refreshPorts() {
   }
 }
 
-// Port selection handler
+// Open serial monitor explicitly (after upload)
+async function openSerialMonitor(portPath, silent = false) {
+  if (!portPath) return;
+  const ESP32_BAUD_RATE = 115200;
+  const result = await window.electronAPI.openSerialPort(portPath, ESP32_BAUD_RATE);
+  if (result.success) {
+    if (!silent) {
+      appendTerminalOutput(`✅ Serial monitor opened on ${portPath}`);
+    }
+  } else if (!silent) {
+    appendTerminalOutput(`❌ Failed to open serial monitor on ${portPath}: ${result.error}`);
+  }
+}
+
+// Port selection handler (no auto monitor)
 async function selectPort(portPath, silent = false) {
   if (!portPath) {
     console.log('⚠️ No port path provided to selectPort');
     return;
   }
-  
   console.log(`🔌 Attempting to select port: ${portPath}`);
   currentPort = portPath;
-  // Fixed baud rate: 115200 for ESP32 board (DO NOT CHANGE)
-  const ESP32_BAUD_RATE = 115200;
-  const result = await window.electronAPI.openSerialPort(portPath, ESP32_BAUD_RATE);
-  
-  if (result.success) {
-    console.log(`✅ Successfully connected to ${portPath}`);
-    // Update the port select to show the selected port
-    const portSelect = document.getElementById('portSelect');
-    if (portSelect) {
-      portSelect.value = portPath;
-    }
-    if (!silent) {
-      appendTerminalOutput(`✅ Connected to ${portPath}`);
-      appendTerminalOutput(`ℹ️ Serial Monitor Active - Any output from ESP32 will appear here`);
-      appendTerminalOutput(`💡 Tip: If you see repeated messages, there's code running on ESP32`);
-      appendTerminalOutput(`💡 Upload new code to replace what's currently running`);
-    }
-  } else {
-    console.error(`❌ Failed to connect to ${portPath}: ${result.error}`);
-    appendTerminalOutput(`❌ Failed to connect to ${portPath}: ${result.error}`);
-    // If access denied, provide actionable tips
-    const lowerErr = (result.error || '').toLowerCase();
-    if (lowerErr.includes('access denied') || lowerErr.includes('in use')) {
-      appendTerminalOutput(`💡 Port is busy. Try:\n- Close other serial monitors (Arduino IDE, etc.)\n- Unplug/replug the USB cable\n- Wait 5 seconds, then click Refresh Ports and select again`);
-    }
+  const portSelect = document.getElementById('portSelect');
+  if (portSelect) {
+    portSelect.value = portPath;
+  }
+  if (!silent) {
+    appendTerminalOutput(`✅ Port selected: ${portPath}`);
+    appendTerminalOutput(`ℹ️ Serial monitor will open after upload completes.`);
   }
 }
 
