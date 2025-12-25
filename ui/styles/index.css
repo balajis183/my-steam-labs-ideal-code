@@ -116,6 +116,7 @@ html, body {
   font-size: 12px;
   overflow-y: auto;
   background: #1e1e1e;
+  /* Auto-scroll: instant (not smooth) for real-time data */
 }
 
 #terminal-output {

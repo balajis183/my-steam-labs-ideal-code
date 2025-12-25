@@ -13,7 +13,12 @@ function appendTerminalOutput(message) {
   const terminalOutput = document.getElementById('terminal-output');
   if (terminalOutput) {
     terminalOutput.textContent += message + '\n';
-    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    
+    // Auto-scroll to bottom (scroll the container, not the output element)
+    const terminalContent = document.getElementById('terminal-content');
+    if (terminalContent) {
+      terminalContent.scrollTop = terminalContent.scrollHeight;
+    }
   }
 }
 
@@ -579,7 +584,7 @@ async function uploadCode() {
     return;
   }
   
-  // For Python/MicroPython: optionally format with black, skip host compilation
+  // For Python/MicroPython: auto-fix indentation and format with black
   if (language === 'python') {
     try {
       const fmt = await window.electronAPI.formatPython(code);
@@ -590,7 +595,7 @@ async function uploadCode() {
         if (editorWindow && editorWindow.setEditorValue) {
           editorWindow.setEditorValue(code);
         }
-        appendTerminalOutput('🧹 Code formatted (black --fast).');
+        appendTerminalOutput('🧹 Code auto-fixed and formatted successfully.');
       } else if (fmt && !fmt.success) {
         appendTerminalOutput(`⚠️ Formatter not applied: ${fmt.error || 'unknown error'}`);
       }
@@ -683,20 +688,45 @@ async function uploadCode() {
         return;
     }
     
-    if (result.success) {
+    console.log('🔍 [UPLOAD RESULT]', result); // DEBUG
+    
+    if (result && result.success) {
       appendTerminalOutput(`✅ Upload successful!`);
       appendTerminalOutput(result.output || 'No output');
       
       // Open serial monitor after successful upload (for Python/ESP32)
       if (language === 'python' && currentPort) {
-        appendTerminalOutput(`🔄 Opening serial monitor...`);
-        await new Promise(resolve => setTimeout(resolve, 800)); // wait a bit
-        await openSerialMonitor(currentPort, true);
-        appendTerminalOutput(`✅ Serial monitor opened - you can see ESP32 output now`);
+        console.log('🔍 [SERIAL MONITOR] Attempting to reopen serial monitor...');
+        appendTerminalOutput(`🔄 Opening serial monitor (waiting for ESP32 to boot)...`);
+        await new Promise(resolve => setTimeout(resolve, 1500)); // wait for board to boot
+        
+        try {
+          await openSerialMonitor(currentPort, false);
+          console.log('🔍 [SERIAL MONITOR] Serial monitor opened successfully');
+          
+          // CRITICAL: Send Ctrl+D to trigger MicroPython soft reset
+          // This makes the ESP32 re-run main.py and start sending output
+          await new Promise(resolve => setTimeout(resolve, 500));
+          console.log('🔍 [SERIAL MONITOR] Sending Ctrl+D to trigger main.py execution...');
+          try {
+            await window.electronAPI.sendSerialData(currentPort, '\x04'); // Ctrl+D = soft reset
+            console.log('🔍 [SERIAL MONITOR] Soft reset sent, main.py should start executing');
+            appendTerminalOutput(`🔄 Triggering code execution on ESP32...`);
+          } catch (ctrlDErr) {
+            console.warn('⚠️ [SERIAL MONITOR] Failed to send Ctrl+D:', ctrlDErr);
+          }
+          
+          appendTerminalOutput(`📊 Waiting for ESP32 output... (if nothing appears, press the physical RESET button)`);
+        } catch (monitorErr) {
+          console.error('❌ [SERIAL MONITOR] Error opening:', monitorErr);
+          appendTerminalOutput(`⚠️ Error opening serial monitor: ${monitorErr.message}`);
+          appendTerminalOutput(`💡 Try clicking the 📡 Serial Monitor button or press RESET on ESP32`);
+        }
       }
     } else {
+      console.log('❌ [UPLOAD RESULT] Upload failed:', result);
       appendTerminalOutput(`❌ Upload failed:`);
-      appendTerminalOutput(result.error);
+      appendTerminalOutput(result ? (result.error || 'Unknown error') : 'No result returned');
     }
   } catch (error) {
     appendTerminalOutput(`❌ Upload error: ${error.message}`);
@@ -900,17 +930,43 @@ async function refreshPorts() {
 
 // Open serial monitor explicitly (after upload)
 async function openSerialMonitor(portPath, silent = false) {
-  if (!portPath) return;
+  if (!portPath) {
+    console.error('❌ [SERIAL MONITOR] No port path provided');
+    return;
+  }
   const ESP32_BAUD_RATE = 115200;
+  console.log(`🔌 [SERIAL MONITOR] Opening port ${portPath} at ${ESP32_BAUD_RATE} baud...`);
+  
   const result = await window.electronAPI.openSerialPort(portPath, ESP32_BAUD_RATE);
-  if (result.success) {
+  console.log(`🔌 [SERIAL MONITOR] Result:`, result);
+  
+  if (result && result.success) {
     if (!silent) {
-      appendTerminalOutput(`✅ Serial monitor opened on ${portPath}`);
+      appendTerminalOutput(`✅ Serial monitor opened on ${portPath} at ${ESP32_BAUD_RATE} baud`);
+      appendTerminalOutput(`📡 Listening for ESP32 output...`);
     }
-  } else if (!silent) {
-    appendTerminalOutput(`❌ Failed to open serial monitor on ${portPath}: ${result.error}`);
+  } else {
+    const errorMsg = result ? (result.error || 'Unknown error') : 'No result';
+    console.error(`❌ [SERIAL MONITOR] Failed:`, errorMsg);
+    if (!silent) {
+      appendTerminalOutput(`❌ Failed to open serial monitor on ${portPath}: ${errorMsg}`);
+    }
   }
 }
+
+// Manual Serial Monitor button (Arduino-style)
+async function manualOpenSerialMonitor() {
+  if (!currentPort) {
+    appendTerminalOutput('❌ No port selected. Please select a port first.');
+    return;
+  }
+  showTerminal();
+  appendTerminalOutput(`🔄 Opening serial monitor on ${currentPort}...`);
+  await openSerialMonitor(currentPort, true);
+  appendTerminalOutput(`✅ Serial monitor opened - you can see ESP32 output now`);
+}
+
+window.manualOpenSerialMonitor = manualOpenSerialMonitor;
 
 // Port selection handler (no auto monitor)
 async function selectPort(portPath, silent = false) {
@@ -932,17 +988,14 @@ async function selectPort(portPath, silent = false) {
 
 // Event listeners for serial data - Enhanced Serial Monitor
 window.electronAPI.onSerialData((data) => {
+  // Mirror raw data to browser console for debugging
+  console.log('🔌 [SERIAL DATA]', data);
+
   // Display serial data in terminal (Serial Monitor)
-  // Filter out empty lines and normalize whitespace
-  const trimmedData = data.trim();
+  const trimmedData = (data || '').trim();
   if (trimmedData) {
     appendTerminalOutput(trimmedData);
-    
-    // Auto-scroll to bottom
-    const terminalOutput = document.getElementById('terminal-output');
-    if (terminalOutput) {
-      terminalOutput.scrollTop = terminalOutput.scrollHeight;
-    }
+    // Note: appendTerminalOutput already handles auto-scroll
   }
 });
 
@@ -994,6 +1047,8 @@ async function sendSerialInput() {
 window.sendSerialInput = sendSerialInput;
 
 window.electronAPI.onTerminalOutput((data) => {
+  // Also mirror terminal output to console for easier debugging
+  console.log('🖥️ [TERMINAL]', data);
   appendTerminalOutput(data);
 });
 
