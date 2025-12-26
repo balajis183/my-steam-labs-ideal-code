@@ -1,108 +1,70 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════
- * MY STEAM LAB - MICROPYTHON CODE GENERATOR
- * ═══════════════════════════════════════════════════════════════════════════
+ * Enhanced MicroPython Code Generator for MY STEAM LAB
  * 
  * ⚠️ IMPORTANT: This generator produces MICROPYTHON code ONLY (not C/C++)
  * 
- * ARCHITECTURE:
- * ============
- * SECTION 1: PIN MAPPING - Hardware configuration from PIN MAPPING.pdf
- * SECTION 2: LIBRARY MAPPING - Import requirements per block type
- * SECTION 3: UTILITY FUNCTIONS - Block detection, import generation
- * SECTION 4: PIN DEFINITIONS GENERATORS - Generate pin setup code
- *            ├── 4.1: Motors (M1-M4)
- *            ├── 4.2: Sensors (LDR, IR, Temp, Ultrasonic, Touch)
- *            ├── 4.3: Joysticks (Joystick1, Joystick2)
- *            ├── 4.4: OLED Display
- *            └── 4.5: Servo Motors
- * SECTION 5: HELPER FUNCTION GENERATORS - Generate control functions
- *            ├── 5.1: Motor Control Functions
- *            ├── 5.2: Sensor Reading Functions
- *            ├── 5.3: Joystick Reading Functions
- *            └── 5.4: OLED Display Functions
- * SECTION 6: MAIN CODE GENERATION - Combine all sections into final code
+ * Features:
+ * - Fixed pin mapping from PIN MAPPING.pdf
+ * - Auto-import required libraries based on blocks used
+ * - Proper MicroPython code structure (ESP32-compatible)
+ * - Ready-to-upload ESP32 MicroPython code
+ * - Uses MicroPython-specific APIs (machine module, not Arduino/C++)
  * 
  * ⚠️ CRITICAL HARDWARE SETTINGS:
  * - Baud Rate: 115200 (FIXED - DO NOT CHANGE)
- * - All pin mappings from PIN MAPPING.pdf
- * - ESP32 MicroPython firmware v1.26.0+
- * - No f-strings (use comma-separated print for MicroPython compatibility)
- * 
- * ═══════════════════════════════════════════════════════════════════════════
+ *   This is the fixed serial communication speed for this ESP32 board.
+ *   All serial communication (upload, monitor, REPL) uses 115200 baud.
  */
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 1: PIN MAPPING - Hardware Configuration
-// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * PIN MAPPING CONFIGURATION
  * 
- * ⚠️ Source: PIN MAPPING.pdf (provided by client)
- * ⚠️ DO NOT modify these values without updating hardware connections!
+ * ⚠️ IMPORTANT: These pin mappings MUST match PIN MAPPING.pdf exactly!
  * 
- * All GPIO pin assignments are fixed based on the ESP32 board layout.
- * This ensures consistent behavior across all MY STEAM LAB devices.
+ * DO NOT use placeholder values - update this object with the exact GPIO pin numbers
+ * from the PIN MAPPING.pdf document provided by the client.
+ * 
+ * To update:
+ * 1. Open PIN MAPPING.pdf
+ * 2. Find each component's GPIO pin numbers
+ * 3. Update the values below to match exactly
+ * 4. Save this file
+ * 
+ * The code generator uses these mappings to generate MicroPython code with fixed pins.
  */
 const PIN_MAPPING = {
-  // ✅ Motors Configuration (from PIN MAPPING.pdf)
+  // ✅ UPDATED FROM PIN MAPPING.pdf - Exact GPIO pins as per client specification
   motors: {
-    M1: { pinA: 19, pinB: 18, enable: null },  // Motor M1: GPIO19, GPIO18
-    M2: { pinA: 5, pinB: 17, enable: null },   // Motor M2: GPIO5, GPIO17
-    M3: { pinA: 23, pinB: 22, enable: null },  // Motor M3: GPIO23, GPIO22
-    M4: { pinA: 21, pinB: 16, enable: null }   // Motor M4: GPIO21, GPIO16
+    M1: { pinA: 19, pinB: 18, enable: null },  // ✅ Motor M1: io19, io18 (from PDF)
+    M2: { pinA: 5, pinB: 17, enable: null },   // ✅ Motor M2: io5, io17 (from PDF)
+    M3: { pinA: 23, pinB: 22, enable: null },  // ✅ Motor M3: io23, io22 (from PDF)
+    M4: { pinA: 21, pinB: 16, enable: null }  // ✅ Motor M4: io21, io16 (from PDF)
   },
-  
-  // ✅ Sensors Configuration (from PIN MAPPING.pdf)
   sensors: {
-    ldr: { pin: 34, type: "analog" },           // LDR: GPIO34 (analog)
-    ir: { pin: 35, type: "analog" },            // IR: GPIO35 (analog)
-    temperature: { pin: 32, type: "analog" },   // Temperature: GPIO32 (analog)
-    ultrasonic: { trig: 33, echo: 32 },         // Ultrasonic: TRIG=GPIO33, ECHO=GPIO32
-    touch: { pin: 12 },                         // Touch: GPIO12 (digital)
-    buzzer: { pin: null }                       // Buzzer: Not specified in PDF
+    ldr: { pin: 34, type: "analog" },           // ✅ LDR at pin io34 (from PDF)
+    ir: { pin: 35, type: "analog" },            // ✅ IR at pin io35 (from PDF)
+    temperature: { pin: 32, type: "analog" },   // ✅ Temp data at io32 (from PDF)
+    ultrasonic: { trig: 33, echo: 32 },         // ✅ Ultrasonic: trig io33, echo io32 (from PDF)
+    touch: { pin: 12 },                         // ✅ Touch at io12 (from PDF)
+    buzzer: { pin: null }                       // Buzzer pin not specified in PDF
   },
-  
-  // ✅ Joystick Configuration (from PIN MAPPING.pdf)
   joystick: {
-    joystick1: { vertical: 4, horizontal: 2 },   // Joystick1: V=GPIO4, H=GPIO2
-    joystick2: { vertical: 26, horizontal: 25 }  // Joystick2: V=GPIO26, H=GPIO25
+    joystick1: { vertical: 4, horizontal: 2 },   // ✅ Joystick 1: V axis io4, H axis io2 (from PDF)
+    joystick2: { vertical: 26, horizontal: 25 }   // ✅ Joystick 2: V axis io26, H axis io25 (from PDF)
   },
-  
-  // ✅ OLED Display Configuration (from PIN MAPPING.pdf)
-  oled: { 
-    sda: 13,           // OLED SDA: GPIO13
-    scl: 15,           // OLED SCL: GPIO15
-    address: "0x3C"    // I2C address
-  },
-  
-  // ✅ Servo Configuration (pins not specified in PDF - update when available)
+  oled: { sda: 13, scl: 15, address: "0x3C" },  // ✅ OLED: SDA io13, SCL io15 (from PDF)
   servo: {
-    servo1: { pin: 14 },  // Servo1: GPIO14 (placeholder)
-    servo2: { pin: 27 }   // Servo2: GPIO27 (placeholder)
+    servo1: { pin: null },  // Servo pins not specified in PDF
+    servo2: { pin: null }   // Servo pins not specified in PDF
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 2: LIBRARY MAPPING - Import Configuration
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Maps each Blockly block to its required MicroPython libraries
- * 
- * When a block is used, this mapping determines which imports are needed.
- * Example: "ultrasonic_sensor" requires ["machine", "time", "hcsr04"]
- */
+// Library mapping (loaded from library_mapping.json)
 const LIBRARY_MAPPING = {
-  // Block type → Required libraries
   block_to_libraries: {
-    // Motor blocks
     dc_motor: ["machine"],
     motor_speed: ["machine"],
     servo_motor: ["machine", "servo"],
-    
-    // Sensor blocks
     ldr_sensor: ["machine"],
     ir_sensor: ["machine"],
     ir_sensor_analog: ["machine"],
@@ -110,12 +72,8 @@ const LIBRARY_MAPPING = {
     ultrasonic_sensor: ["machine", "time", "hcsr04"],
     touch_sensor: ["machine"],
     color_sensor: ["machine", "tcs34725"],
-    
-    // Input device blocks
     joystick1: ["machine"],
     joystick2: ["machine"],
-    
-    // Display blocks
     oled_show: ["machine", "ssd1306"],
     oled_show_color: ["machine", "ssd1306"],
     oled_display_colored: ["machine", "ssd1306"],
@@ -123,18 +81,12 @@ const LIBRARY_MAPPING = {
     oled_display_char: ["machine", "ssd1306"],
     oled_animation_blink: ["machine", "ssd1306", "time"],
     oled_animation_scroll: ["machine", "ssd1306", "time"],
-    
-    // GPIO blocks
     set_pin: ["machine"],
     read_pin: ["machine"],
     pin_mode: ["machine"],
     analog_read: ["machine"],
     analog_write: ["machine"],
-    
-    // Utility blocks
     time_delay: ["time"],
-    
-    // Communication blocks
     wifi_connect: ["network"],
     wifi_send: ["network", "socket"],
     wifi_receive: ["network", "socket"],
@@ -143,8 +95,6 @@ const LIBRARY_MAPPING = {
     bluetooth_available: ["ubluetooth"],
     bluetooth_read: ["ubluetooth"]
   },
-  
-  // Library name → Import statement
   library_imports: {
     machine: "from machine import Pin, PWM, ADC, SoftI2C",
     time: "import time",
@@ -159,19 +109,8 @@ const LIBRARY_MAPPING = {
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 3: UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
 /**
  * Detect which blocks are used in the workspace
- * 
- * Scans the entire Blockly workspace and returns a list of all block types used.
- * This is used to determine which libraries to import and which helper functions
- * to generate.
- * 
- * @param {Blockly.Workspace} workspace - The Blockly workspace
- * @returns {Array<string>} Array of block type names
  */
 function detectUsedBlocks(workspace) {
   const usedBlocks = new Set();
@@ -194,9 +133,6 @@ function detectUsedBlocks(workspace) {
 
 /**
  * Get required libraries based on used blocks
- * 
- * @param {Array<string>} usedBlocks - Array of block type names
- * @returns {Array<string>} Array of required library names
  */
 function getRequiredLibraries(usedBlocks) {
   const requiredLibs = new Set();
@@ -213,13 +149,9 @@ function getRequiredLibraries(usedBlocks) {
 
 /**
  * Generate imports section
- * 
- * @param {Array<string>} requiredLibraries - Array of required library names
- * @returns {string} MicroPython import statements
  */
 function generateImports(requiredLibraries) {
   const imports = [];
-  // Define import order for consistent code structure
   const importOrder = ["machine", "time", "hcsr04", "ssd1306", "servo", "dht", "tcs34725", "network", "socket", "ubluetooth"];
   
   importOrder.forEach(lib => {
@@ -231,114 +163,90 @@ function generateImports(requiredLibraries) {
   return imports.join("\n");
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 4: PIN DEFINITIONS GENERATORS
-// ═══════════════════════════════════════════════════════════════════════════
-
 /**
- * SECTION 4.1: Generate Motor Pin Definitions
- * 
- * Generates pin setup code for DC motors M1-M4
- * Each motor has two control pins (pinA, pinB) and one PWM pin for speed control
+ * Generate pin definitions based on used blocks
  */
-function generateMotorPinDefinitions(pinMapping) {
+function generatePinDefinitions(usedBlocks, pinMapping) {
   const definitions = [];
+  const definedPins = new Set();
   
-  [1, 2, 3, 4].forEach(motorNum => {
-    const motorKey = `M${motorNum}`;
-    const mapping = pinMapping.motors[motorKey];
-    if (mapping) {
-      definitions.push(`# Motor M${motorNum} Configuration`);
-      definitions.push(`M${motorNum}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
-      definitions.push(`M${motorNum}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
-      if (mapping.enable !== null && mapping.enable !== undefined) {
-        definitions.push(`M${motorNum}_PWM = PWM(Pin(${mapping.enable}))`);
-      } else {
-        definitions.push(`M${motorNum}_PWM = PWM(Pin(${mapping.pinA}))`);
+  // Motor pins
+  if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
+    ["M1", "M2", "M3", "M4"].forEach(motor => {
+      const mapping = pinMapping.motors[motor];
+      if (mapping) {
+        definitions.push(`M${motor}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
+        definitions.push(`M${motor}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
+        if (mapping.enable !== null && mapping.enable !== undefined) {
+          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.enable}))`);
+        } else {
+          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.pinA}))`);
+        }
+        definitions.push(`M${motor}_PWM.freq(1000)`);
+        definitions.push("");
       }
-      definitions.push(`M${motorNum}_PWM.freq(1000)`);
-      definitions.push("");
-    }
-  });
+    });
+  }
   
-  return definitions.join("\n");
-}
-
-/**
- * SECTION 4.2: Generate Sensor Pin Definitions
- * 
- * Generates pin setup code for all sensors:
- * - LDR (Light Dependent Resistor)
- * - IR Sensor (Infrared)
- * - Temperature Sensor (Analog)
- * - Ultrasonic Sensor (HC-SR04)
- * - Touch Sensor
- */
-function generateSensorPinDefinitions(usedBlocks, pinMapping) {
-  const definitions = [];
-  
-  // LDR Sensor
+  // Sensor pins
   if (usedBlocks.includes("ldr_sensor")) {
-    definitions.push(`# LDR Sensor Configuration`);
     definitions.push(`LDR_PIN = ADC(Pin(${pinMapping.sensors.ldr.pin}))`);
     definitions.push("");
   }
   
-  // IR Sensor
   if (usedBlocks.includes("ir_sensor") || usedBlocks.includes("ir_sensor_analog")) {
-    definitions.push(`# IR Sensor Configuration`);
     definitions.push(`IR_PIN = ADC(Pin(${pinMapping.sensors.ir.pin}))`);
     definitions.push("");
   }
   
-  // Temperature Sensor (Analog)
   if (usedBlocks.includes("temp_sensor")) {
-    definitions.push(`# Analog Temperature Sensor Configuration`);
+    definitions.push(`# Analog temperature sensor setup`);
     definitions.push(`temp_adc = ADC(Pin(${pinMapping.sensors.temperature.pin}))`);
     definitions.push(`temp_adc.atten(ADC.ATTN_11DB)  # Full range 0-3.3V`);
     definitions.push(`temp_adc.width(ADC.WIDTH_12BIT)  # 12-bit resolution (0-4095)`);
     definitions.push("");
   }
   
-  // Ultrasonic Sensor (HC-SR04)
   if (usedBlocks.includes("ultrasonic_sensor")) {
-    definitions.push(`# Ultrasonic Sensor Configuration`);
     definitions.push(`ULTRASONIC_SENSOR = hcsr04.HCSR04(trigger_pin=${pinMapping.sensors.ultrasonic.trig}, echo_pin=${pinMapping.sensors.ultrasonic.echo})`);
     definitions.push("");
   }
   
-  // Touch Sensor
   if (usedBlocks.includes("touch_sensor")) {
-    definitions.push(`# Touch Sensor Configuration`);
     definitions.push(`TOUCH_PIN = Pin(${pinMapping.sensors.touch.pin}, Pin.IN)`);
     definitions.push("");
   }
   
-  return definitions.join("\n");
-}
-
-/**
- * SECTION 4.3: Generate Joystick Pin Definitions
- * 
- * Generates pin setup code for Joystick 1 and Joystick 2
- * Each joystick has two analog axes: Vertical (V) and Horizontal (H)
- */
-function generateJoystickPinDefinitions(usedBlocks, pinMapping) {
-  const definitions = [];
-  
-  // Joystick 1
+  // Joystick pins
   if (usedBlocks.includes("joystick1")) {
-    definitions.push(`# Joystick 1 Configuration`);
     definitions.push(`JOYSTICK1_V = ADC(Pin(${pinMapping.joystick.joystick1.vertical}))`);
     definitions.push(`JOYSTICK1_H = ADC(Pin(${pinMapping.joystick.joystick1.horizontal}))`);
     definitions.push("");
   }
   
-  // Joystick 2
   if (usedBlocks.includes("joystick2")) {
-    definitions.push(`# Joystick 2 Configuration`);
     definitions.push(`JOYSTICK2_V = ADC(Pin(${pinMapping.joystick.joystick2.vertical}))`);
     definitions.push(`JOYSTICK2_H = ADC(Pin(${pinMapping.joystick.joystick2.horizontal}))`);
+    definitions.push("");
+  }
+  
+  // OLED pins
+  if (usedBlocks.some(b => b.startsWith("oled_"))) {
+    definitions.push(`I2C_SDA = Pin(${pinMapping.oled.sda})`);
+    definitions.push(`I2C_SCL = Pin(${pinMapping.oled.scl})`);
+    definitions.push(`i2c = SoftI2C(sda=I2C_SDA, scl=I2C_SCL)`);
+    definitions.push(`oled = ssd1306.SSD1306_I2C(128, 64, i2c)`);
+    definitions.push("");
+  }
+  
+  // Servo pins
+  if (usedBlocks.includes("servo_motor")) {
+    definitions.push(`SERVO1_PIN = Pin(${pinMapping.servo.servo1.pin})`);
+    definitions.push(`servo1 = servo.Servo(SERVO1_PIN)`);
+    if (pinMapping.servo.servo2) {
+      definitions.push(`SERVO2_PIN = Pin(${pinMapping.servo.servo2.pin})`);
+      definitions.push(`servo2 = servo.Servo(SERVO2_PIN)`);
+    }
     definitions.push("");
   }
   
@@ -346,89 +254,15 @@ function generateJoystickPinDefinitions(usedBlocks, pinMapping) {
 }
 
 /**
- * SECTION 4.4: Generate OLED Display Pin Definitions
- * 
- * Generates pin setup code for SSD1306 OLED display via I2C
+ * Generate helper functions for hardware control
  */
-function generateOLEDPinDefinitions(pinMapping) {
-  const definitions = [];
+function generateHelperFunctions(usedBlocks) {
+  const functions = [];
   
-  definitions.push(`# OLED Display Configuration (SSD1306)`);
-  definitions.push(`I2C_SDA = Pin(${pinMapping.oled.sda})`);
-  definitions.push(`I2C_SCL = Pin(${pinMapping.oled.scl})`);
-  definitions.push(`i2c = SoftI2C(sda=I2C_SDA, scl=I2C_SCL)`);
-  definitions.push(`oled = ssd1306.SSD1306_I2C(128, 64, i2c)`);
-  definitions.push("");
-  
-  return definitions.join("\n");
-}
-
-/**
- * SECTION 4.5: Generate Servo Motor Pin Definitions
- * 
- * Generates pin setup code for servo motors
- */
-function generateServoPinDefinitions(pinMapping) {
-  const definitions = [];
-  
-  definitions.push(`# Servo Motor Configuration`);
-  definitions.push(`SERVO1_PIN = Pin(${pinMapping.servo.servo1.pin})`);
-  definitions.push(`servo1 = servo.Servo(SERVO1_PIN)`);
-  if (pinMapping.servo.servo2 && pinMapping.servo.servo2.pin) {
-    definitions.push(`SERVO2_PIN = Pin(${pinMapping.servo.servo2.pin})`);
-    definitions.push(`servo2 = servo.Servo(SERVO2_PIN)`);
-  }
-  definitions.push("");
-  
-  return definitions.join("\n");
-}
-
-/**
- * Main Pin Definitions Generator
- * Combines all pin definition sections based on used blocks
- */
-function generatePinDefinitions(usedBlocks, pinMapping) {
-  const sections = [];
-  
-  // Motor pins
+  // Motor control function
   if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
-    sections.push(generateMotorPinDefinitions(pinMapping));
-  }
-  
-  // Sensor pins
-  sections.push(generateSensorPinDefinitions(usedBlocks, pinMapping));
-  
-  // Joystick pins
-  sections.push(generateJoystickPinDefinitions(usedBlocks, pinMapping));
-  
-  // OLED pins
-  if (usedBlocks.some(b => b.startsWith("oled_"))) {
-    sections.push(generateOLEDPinDefinitions(pinMapping));
-  }
-  
-  // Servo pins
-  if (usedBlocks.includes("servo_motor")) {
-    sections.push(generateServoPinDefinitions(pinMapping));
-  }
-  
-  return sections.filter(s => s.trim()).join("\n");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 5: HELPER FUNCTION GENERATORS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * SECTION 5.1: Motor Control Helper Functions
- * 
- * Generates motor control functions:
- * - set_motor() - Full control with direction (FORWARD/REVERSE/STOP) and speed
- * - set_motor_speed() - Simple speed control (defaults to FORWARD direction)
- */
-function generateMotorHelperFunctions() {
-  return `
+    functions.push(`
 def set_motor(motor_id, speed, direction):
-    """Control a DC motor's speed and direction"""
     motor_num = motor_id[1]
     pin_a_name = 'M' + str(motor_num) + '_PIN_A'
     pin_b_name = 'M' + str(motor_num) + '_PIN_B'
@@ -448,82 +282,10 @@ def set_motor(motor_id, speed, direction):
     else:
         pin_a.value(0)
         pin_b.value(0)
-
-def set_motor_speed(motor_id, speed):
-    """Control a DC motor's speed (forward direction)"""
-    set_motor(motor_id, speed, 'FORWARD')
-`;
-}
-
-/**
- * SECTION 5.2: Sensor Reading Helper Functions
- * 
- * Generates helper functions for reading sensor values:
- * - read_ldr() - Light Dependent Resistor
- * - read_ir() - IR Sensor (digital detection)
- * - read_ir_analog() - IR Sensor (analog value)
- * - read_temperature() - Analog temperature sensor
- * - read_ultrasonic() - Ultrasonic distance sensor
- * - read_touch() - Touch sensor
- */
-function generateSensorHelperFunctions(usedBlocks) {
-  const functions = [];
-  
-  // LDR Sensor
-  if (usedBlocks.includes("ldr_sensor")) {
-    functions.push(`
-def read_ldr():
-    """Read LDR (Light Dependent Resistor) value"""
-    value = LDR_PIN.read()
-    print("LDR:", value)
-    return value
 `);
   }
   
-  // IR Sensor (Digital)
-  if (usedBlocks.includes("ir_sensor")) {
-    functions.push(`
-def read_ir():
-    """Read IR sensor (digital detection)"""
-    value = IR_PIN.read()
-    detected = value > 2048
-    print("IR Sensor:", "Detected" if detected else "Not Detected", "(Raw:", value, ")")
-    return detected
-`);
-  }
-  
-  // IR Sensor (Analog)
-  if (usedBlocks.includes("ir_sensor_analog")) {
-    functions.push(`
-def read_ir_analog():
-    """Read IR sensor (analog value)"""
-    value = IR_PIN.read()
-    print("IR Analog:", value)
-    return value
-`);
-  }
-  
-  // Temperature Sensor
-  if (usedBlocks.includes("temp_sensor")) {
-    functions.push(`
-def read_temperature():
-    """Read analog temperature sensor"""
-    try:
-        raw_value = temp_adc.read()
-        # Convert ADC value to voltage (3.3V reference, 12-bit ADC)
-        voltage = raw_value * (3.3 / 4095)
-        # Convert voltage to temperature (adjust based on your sensor type)
-        # For LM35: 10mV per degree Celsius
-        temperature = voltage * 100
-        print("Temperature:", round(temperature, 1), "°C (ADC:", raw_value, ")")
-        return temperature
-    except Exception as e:
-        print("Temperature read error:", str(e))
-        return 0.0
-`);
-  }
-  
-  // Ultrasonic Sensor
+  // Ultrasonic sensor function
   if (usedBlocks.includes("ultrasonic_sensor")) {
     functions.push(`
 def read_ultrasonic():
@@ -531,60 +293,132 @@ def read_ultrasonic():
     try:
         distance = ULTRASONIC_SENSOR.distance_cm()
         if distance is not None:
-            print("Ultrasonic:", round(distance, 2), "cm")
+            # Format exactly like Arduino IDE
+            print("Distance:", round(distance), "cm")
             return distance
         else:
-            print("Ultrasonic: Out of range")
+            print("Distance: Out of range")
             return 0
     except Exception as e:
-        print("Ultrasonic error:", str(e))
+        print("Distance error:", str(e))
         return 0
 `);
   }
   
-  // Touch Sensor
+  // Sensor reading functions
+  if (usedBlocks.includes("ldr_sensor")) {
+    functions.push(`
+def read_ldr():
+    value = LDR_PIN.read()
+    print("LDR:", value)
+    return value
+`);
+  }
+  
+  if (usedBlocks.includes("ir_sensor")) {
+    functions.push(`
+def read_ir():
+    value = IR_PIN.read()
+    detected = value > 2048
+    print("IR Sensor:", "Detected" if detected else "Not Detected", "(Raw:", value, ")")
+    return detected
+`);
+  }
+  
+  if (usedBlocks.includes("ir_sensor_analog")) {
+    functions.push(`
+def read_ir_analog():
+    value = IR_PIN.read()
+    print("IR Analog:", value)
+    return value
+`);
+  }
+  
+  if (usedBlocks.includes("temp_sensor")) {
+    functions.push(`
+def read_temperature():
+    """Read temperature from analog sensor (LM35/TMP36)"""
+    try:
+        # Take multiple readings and average for stability
+        total = 0
+        samples = 10
+        for _ in range(samples):
+            total += temp_adc.read()
+            time.sleep(0.01)  # 10ms between samples
+        
+        raw_value = total // samples
+        
+        # Check if sensor is connected (floating pin reads very high)
+        if raw_value > 3800:
+            print("Temperature: Sensor not connected")
+            return 0.0
+        
+        # Convert ADC value to voltage (3.3V reference, 12-bit ADC)
+        voltage = raw_value * (3.3 / 4095)
+        
+        # Convert voltage to temperature
+        # For LM35: temperature = voltage * 100 (10mV per °C, no offset)
+        # For TMP36: temperature = (voltage - 0.5) * 100 (10mV per °C, 500mV offset at 0°C)
+        
+        # Using LM35 formula (if readings too high, sensor might be TMP36)
+        temperature = voltage * 100
+        
+        # Sanity check: room temp should be 15-35°C
+        if temperature < 0 or temperature > 100:
+            # Try TMP36 formula instead
+            temperature = (voltage - 0.5) * 100
+        
+        # Format like Arduino IDE (whole numbers)
+        print("Temperature:", round(temperature), "°C")
+        return temperature
+    except Exception as e:
+        print("Temperature error:", str(e))
+        return 0.0
+`);
+  }
+  
   if (usedBlocks.includes("touch_sensor")) {
     functions.push(`
 def read_touch():
-    """Read touch sensor state"""
     value = TOUCH_PIN.value()
     print("Touch Sensor:", "Touched" if value else "Not Touched")
     return value
 `);
   }
   
-  return functions.join("\n");
-}
-
-/**
- * SECTION 5.3: Joystick Reading Helper Functions
- * 
- * Generates helper functions for reading joystick positions
- */
-function generateJoystickHelperFunctions(usedBlocks) {
-  const functions = [];
-  
-  // Joystick 1
   if (usedBlocks.includes("joystick1")) {
     functions.push(`
 def read_joystick1():
-    """Read Joystick 1 position (V=Vertical, H=Horizontal)"""
     v = JOYSTICK1_V.read()
     h = JOYSTICK1_H.read()
-    print("Joystick 1 -> V:", v, "| H:", h)
+    # Print for real-time monitoring on serial
+    try:
+        print("Joystick 1 -> V:", v, "| H:", h)
+    except:
+        pass
     return {'V': v, 'H': h}
 `);
   }
   
-  // Joystick 2
   if (usedBlocks.includes("joystick2")) {
     functions.push(`
 def read_joystick2():
-    """Read Joystick 2 position (V=Vertical, H=Horizontal)"""
     v = JOYSTICK2_V.read()
     h = JOYSTICK2_H.read()
-    print("Joystick 2 -> V:", v, "| H:", h)
+    # Print for real-time monitoring on serial
+    try:
+        print("Joystick 2 -> V:", v, "| H:", h)
+    except:
+        pass
     return {'V': v, 'H': h}
+`);
+  }
+  
+  if (usedBlocks.some(b => b.startsWith("oled_"))) {
+    functions.push(`
+def show_on_oled(text, x, y, color='white'):
+    oled.text(str(text), x, y)
+    oled.show()
 `);
   }
   
@@ -592,64 +426,10 @@ def read_joystick2():
 }
 
 /**
- * SECTION 5.4: OLED Display Helper Functions
- * 
- * Generates helper function for displaying text on OLED
- */
-function generateOLEDHelperFunctions() {
-  return `
-def show_on_oled(text, x, y, color='white'):
-    """Display text on OLED screen"""
-    oled.text(str(text), x, y)
-    oled.show()
-`;
-}
-
-/**
- * Main Helper Functions Generator
- * Combines all helper function sections based on used blocks
- */
-function generateHelperFunctions(usedBlocks) {
-  const sections = [];
-  
-  // Motor control functions
-  if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
-    sections.push(generateMotorHelperFunctions());
-  }
-  
-  // Sensor reading functions
-  sections.push(generateSensorHelperFunctions(usedBlocks));
-  
-  // Joystick reading functions
-  sections.push(generateJoystickHelperFunctions(usedBlocks));
-  
-  // OLED display functions
-  if (usedBlocks.some(b => b.startsWith("oled_"))) {
-    sections.push(generateOLEDHelperFunctions());
-  }
-  
-  return sections.filter(s => s.trim()).join("\n");
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 6: MAIN CODE GENERATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
  * Enhanced Python code generation with pin mapping and auto-imports
- * 
- * This is the main entry point that combines all sections:
- * 1. Header (with timestamp)
- * 2. Imports (based on used blocks)
- * 3. Pin Definitions (hardware setup)
- * 4. Helper Functions (control functions)
- * 5. Main Code (user's Blockly program)
- * 
- * @param {Blockly.Workspace} workspace - The Blockly workspace
- * @returns {string} Complete MicroPython code ready to upload
  */
 function generateEnhancedPythonCode(workspace) {
-  // ✅ VALIDATION: Verify pin mappings are correct
+  // ✅ VALIDATION: Verify pin mappings are correct (updated from PIN MAPPING.pdf)
   console.log('✅ Pin mappings verified - using fixed pins from PIN MAPPING.pdf');
   console.log(`✅ Motor M1: GPIO${PIN_MAPPING.motors.M1.pinA}, GPIO${PIN_MAPPING.motors.M1.pinB}`);
   console.log(`✅ Joystick 1: V=GPIO${PIN_MAPPING.joystick.joystick1.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick1.horizontal}`);
@@ -680,6 +460,7 @@ function generateEnhancedPythonCode(workspace) {
       mainCode = Blockly.Python.workspaceToCode(workspace);
       
       // Ensure MicroPython-compatible code (not C/C++)
+      // Replace any C/C++ style code with MicroPython equivalents
       mainCode = mainCode
         .replace(/void\s+setup\(\)/g, '# MicroPython: setup code')
         .replace(/void\s+loop\(\)/g, '# MicroPython: loop code')
@@ -687,10 +468,10 @@ function generateEnhancedPythonCode(workspace) {
         .replace(/#include\s+<.*>/g, '# MicroPython imports above')
         .replace(/Serial\.begin/g, '# MicroPython: use print() instead')
         .replace(/Serial\.print/g, 'print')
-        .replace(/digitalWrite/g, 'pin.value')
-        .replace(/digitalRead/g, 'pin.value')
-        .replace(/analogWrite/g, 'pwm.duty')
-        .replace(/analogRead/g, 'adc.read');
+        .replace(/digitalWrite/g, 'pin.value')  // MicroPython uses pin.value()
+        .replace(/digitalRead/g, 'pin.value')   // MicroPython uses pin.value()
+        .replace(/analogWrite/g, 'pwm.duty')    // MicroPython uses pwm.duty()
+        .replace(/analogRead/g, 'adc.read');     // MicroPython uses adc.read()
     } else {
       mainCode = "# Error: MicroPython generator not available\npass\n";
     }
@@ -708,11 +489,12 @@ function generateEnhancedPythonCode(workspace) {
       // Ensure time library is imported if we're adding a main loop
       if (!requiredLibraries.includes("time")) {
         requiredLibraries.push("time");
-        imports = generateImports(requiredLibraries);
+        imports = generateImports(requiredLibraries); // Regenerate imports
       }
       
       // Wrap in MicroPython main function and loop
       const indentedCode = mainCode.split('\n').map(line => {
+        // Don't indent empty lines or comments at start
         if (line.trim() === '' || line.trim().startsWith('#')) {
           return line;
         }
@@ -727,7 +509,7 @@ ${indentedCode}
 try:
     while True:
         main()
-        time.sleep(1)  # 1 second delay (like Arduino)
+        time.sleep(0.5)  # 500ms delay (exactly like Arduino IDE)
 except KeyboardInterrupt:
     print("Program stopped")
     pass
@@ -742,10 +524,6 @@ except KeyboardInterrupt:
   
   return fullCode;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════════════════
 
 // Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
@@ -762,3 +540,4 @@ if (typeof module !== 'undefined' && module.exports) {
 window.generateEnhancedPythonCode = generateEnhancedPythonCode;
 window.PIN_MAPPING = PIN_MAPPING;
 window.LIBRARY_MAPPING = LIBRARY_MAPPING;
+

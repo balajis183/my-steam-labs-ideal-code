@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Board Status
   checkBoard: () => ipcRenderer.invoke('check-board'),
   
+  // Firmware Detection
+  detectFirmware: (port) => ipcRenderer.invoke('detect-firmware', port),
+  
   // ESP32 Connection Test
   testEsp32Connection: (port) => ipcRenderer.invoke('test-esp32-connection', port),
   

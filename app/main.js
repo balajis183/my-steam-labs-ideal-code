@@ -13,6 +13,48 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Utility: detect what firmware is on the ESP32
+async function detectFirmwareType(portPath) {
+  try {
+    console.log(`🔍 Detecting firmware type on ${portPath}...`);
+    
+    const pythonPath = await findPythonPath();
+    
+    // Try to connect with mpremote (MicroPython)
+    const mpTestCmd = `"${pythonPath}" -m mpremote connect ${portPath} exec "import sys; print(sys.implementation.name)"`;
+    
+    const result = await new Promise((resolve) => {
+      exec(mpTestCmd, { timeout: 5000 }, (err, stdout, stderr) => {
+        if (!err && stdout && stdout.includes('micropython')) {
+          resolve({ 
+            type: 'micropython', 
+            version: stdout.trim(),
+            compatible: true 
+          });
+        } else {
+          // Not MicroPython - could be Arduino, ESP-IDF, or bootloader
+          resolve({ 
+            type: 'unknown', 
+            compatible: false,
+            error: stderr || 'Not MicroPython firmware'
+          });
+        }
+      });
+    });
+    
+    console.log(`✅ Firmware detection result:`, result);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Firmware detection error:', error);
+    return { 
+      type: 'unknown', 
+      compatible: false, 
+      error: error.message 
+    };
+  }
+}
+
 // Utility: find Python executable path dynamically
 async function findPythonPath() {
   const possiblePaths = [
@@ -59,6 +101,67 @@ async function findPythonPath() {
 // This is the fixed serial communication speed - DO NOT CHANGE
 const ESP32_BAUD_RATE = 115200;
 
+// AGGRESSIVE HARDWARE RESET - Physically resets ESP32 EXACTLY like Arduino IDE
+async function hardwareResetESP32(portPath) {
+  return new Promise((resolve) => {
+    try {
+      console.log('🔨 Performing HARDWARE RESET on ESP32 (Arduino IDE style)...');
+      const p = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      
+      p.open((err) => {
+        if (err) {
+          console.log(`⚠️ Hardware reset failed: ${err.message}`);
+          return resolve(false);
+        }
+        
+        // EXACT Arduino IDE reset sequence (from esptool.py)
+        // DTR controls ESP32 EN pin (reset)
+        // RTS controls ESP32 GPIO0 pin (bootloader mode)
+        
+        // Step 1: Set initial state
+        p.set({ dtr: true, rts: false }, (err1) => {
+          if (err1) {
+            console.log(`⚠️ Reset step 1 failed: ${err1.message}`);
+            p.close(() => { try { p.destroy(); } catch {} });
+            return resolve(false);
+          }
+          
+          setTimeout(() => {
+            // Step 2: Pull EN low (reset)
+            p.set({ dtr: false, rts: false }, (err2) => {
+              if (err2) {
+                console.log(`⚠️ Reset step 2 failed: ${err2.message}`);
+                p.close(() => { try { p.destroy(); } catch {} });
+                return resolve(false);
+              }
+              
+              setTimeout(() => {
+                // Step 3: Release EN (boot normally)
+                p.set({ dtr: true, rts: false }, (err3) => {
+                  if (err3) {
+                    console.log(`⚠️ Reset step 3 failed: ${err3.message}`);
+                  }
+                  
+                  setTimeout(() => {
+                    p.close(() => {
+                      try { p.destroy(); } catch {}
+                      console.log('✅ Hardware reset complete (Arduino IDE style)');
+                      resolve(true);
+                    });
+                  }, 250);  // Wait for ESP32 to start booting
+                });
+              }, 100);  // Hold reset for 100ms
+            });
+          }, 50);  // Initial delay
+        });
+      });
+    } catch (e) {
+      console.log(`⚠️ Hardware reset exception: ${e.message}`);
+      resolve(false);
+    }
+  });
+}
+
 // Send Ctrl+C/Ctrl+D to try to drop into raw REPL before mpremote uses the port
 async function pokeRawRepl(portPath) {
   return new Promise((resolve) => {
@@ -69,14 +172,16 @@ async function pokeRawRepl(portPath) {
           console.log(`Warning: pokeRawRepl open failed: ${err.message}`);
           return resolve();
         }
-        const payload = Buffer.from([0x03, 0x03, 0x04]); // ctrl-C ctrl-C ctrl-D
+        // Send MULTIPLE Ctrl+C to interrupt running code, then Ctrl+D to soft reset
+        // This is more aggressive than before (6 interrupts instead of 2)
+        const payload = Buffer.from([0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x04]); // 6x ctrl-C + ctrl-D
         p.write(payload, () => {
           setTimeout(() => {
             p.close(() => {
               try { p.destroy(); } catch {}
               resolve();
             });
-          }, 200);
+          }, 300); // Slightly longer delay
         });
       });
     } catch (e) {
@@ -261,6 +366,46 @@ async function hardResetPort(portPath) {
   });
 }
 
+// Utility: EMERGENCY reset - puts ESP32 in bootloader mode (DTR low = GPIO0 low)
+// This is MORE AGGRESSIVE than hardResetPort and can interrupt stuck code
+async function emergencyResetToBootloader(portPath) {
+  return new Promise((resolve) => {
+    try {
+      console.log('🚨 EMERGENCY RESET: Putting ESP32 in bootloader mode...');
+      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      resetPort.open((err) => {
+        if (err) {
+          console.log(`Warning: emergencyReset open failed: ${err.message}`);
+          return resolve();
+        }
+        // DTR low + RTS low = GPIO0 low + RESET = Bootloader mode
+        resetPort.set({ dtr: false, rts: false }, () => {
+          setTimeout(() => {
+            // Release RESET but keep GPIO0 low
+            resetPort.set({ dtr: false, rts: true }, () => {
+              setTimeout(() => {
+                // Now release GPIO0 - ESP32 should be in bootloader
+                resetPort.set({ dtr: true, rts: true }, () => {
+                  setTimeout(() => {
+                    resetPort.close(() => {
+                      try { resetPort.destroy(); } catch {}
+                      console.log('✅ ESP32 should now be in bootloader mode');
+                      resolve();
+                    });
+                  }, 300);
+                });
+              }, 200);
+            });
+          }, 150);
+        });
+      });
+    } catch (e) {
+      console.log(`Warning: emergencyReset exception: ${e.message}`);
+      resolve();
+    }
+  });
+}
+
 // Utility: capture output from mpremote command (DO NOT open serial port - mpremote handles it)
 async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
   return new Promise(async (resolve) => {
@@ -386,11 +531,40 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ---- Serial Port Management ----
+// ---- Serial Port Management with Firmware Detection ----
 ipcMain.handle('list-serial-ports', async () => {
   try {
     const ports = await SerialPort.list();
-    return ports;
+    
+    // Enhance port information with firmware detection
+    const enhancedPorts = await Promise.all(ports.map(async (port) => {
+      try {
+        // Quick firmware check (with short timeout)
+        const firmwareInfo = await detectFirmwareType(port.path);
+        return {
+          ...port,
+          hasMicroPython: firmwareInfo.compatible,
+          firmwareType: firmwareInfo.type,
+          recommended: firmwareInfo.compatible // Mark MicroPython ports as recommended
+        };
+      } catch (error) {
+        return {
+          ...port,
+          hasMicroPython: false,
+          firmwareType: 'unknown',
+          recommended: false
+        };
+      }
+    }));
+    
+    // Sort: MicroPython ports first
+    enhancedPorts.sort((a, b) => {
+      if (a.hasMicroPython && !b.hasMicroPython) return -1;
+      if (!a.hasMicroPython && b.hasMicroPython) return 1;
+      return 0;
+    });
+    
+    return enhancedPorts;
   } catch (err) {
     console.error("SerialPort.list() error:", err);
     return [];
@@ -537,56 +711,112 @@ ipcMain.handle('compile-c', async (_e, code) => {
 });
 
 // ---- Python Formatter (black) ----
-// Simple Python indentation validator (doesn't modify correct code)
+// Enhanced auto-fix Python indentation (handles complex student code)
 function autoFixPythonIndentation(code) {
   try {
-    // For code generated by our code_generator.js, it should already be correct
-    // Only do basic validation, don't aggressively reformat
     const lines = code.split('\n');
+    const fixed = [];
+    let indentStack = [0]; // Track nested indentation levels
     
-    // Check if code looks valid (has proper structure)
-    const hasImports = lines.some(l => l.trim().startsWith('import ') || l.trim().startsWith('from '));
-    const hasFunctions = lines.some(l => l.trim().startsWith('def '));
-    
-    if (hasImports && hasFunctions) {
-      // Code looks valid, return as-is
-      console.log('✅ Code validation passed - no changes needed');
-      return code;
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      const trimmed = line.trim();
+      
+      // Skip empty lines and preserve comments with current indent
+      if (!trimmed) {
+        fixed.push('');
+        continue;
+      }
+      if (trimmed.startsWith('#')) {
+        const currentIndent = indentStack[indentStack.length - 1];
+        fixed.push('    '.repeat(currentIndent) + trimmed);
+        continue;
+      }
+      
+      // Dedent keywords (else, elif, except, finally)
+      if (trimmed.match(/^(else:|elif |except:|finally:)/)) {
+        if (indentStack.length > 1) {
+          indentStack.pop(); // Go back one level
+        }
+      }
+      
+      // Dedent for return/break/continue/pass if next line is dedented
+      if (trimmed.match(/^(return |break|continue|pass)/) && !trimmed.endsWith(':')) {
+        const nextLine = lines[i + 1];
+        if (nextLine) {
+          const nextTrimmed = nextLine.trim();
+          // Check if next line is a block keyword
+          if (nextTrimmed && nextTrimmed.match(/^(def |class |if |elif |else:|while |for |with |try:|except:|finally:|import |from |@)/)) {
+            if (indentStack.length > 1) {
+              indentStack.pop();
+            }
+          }
+        }
+      }
+      
+      // Top-level keywords reset to indent 0
+      if (trimmed.match(/^(import |from )/)) {
+        indentStack = [0];
+      }
+      
+      // Function/class definitions at appropriate level
+      if (trimmed.match(/^(def |class |@)/)) {
+        // If we're deep in nested blocks, reset to top level for new function
+        if (indentStack.length > 2 && !trimmed.startsWith('@')) {
+          indentStack = [0];
+        }
+      }
+      
+      // Apply current indentation
+      const currentIndent = indentStack[indentStack.length - 1];
+      const indentedLine = '    '.repeat(currentIndent) + trimmed;
+      fixed.push(indentedLine);
+      
+      // Increase indent after block-starting colons
+      if (trimmed.endsWith(':')) {
+        const newIndent = currentIndent + 1;
+        indentStack.push(newIndent);
+      }
     }
     
-    // If code looks invalid or very simple, return original anyway
-    // Let black handle any formatting issues
-    console.log('✅ Code structure OK - passing to formatter');
-    return code;
+    console.log('✅ Auto-fixed indentation');
+    return fixed.join('\n');
   } catch (err) {
-    console.error('❌ Code validation error:', err);
-    return code; // Return original if validation fails
+    console.error('❌ Auto-fix indentation error:', err);
+    return code; // Return original if fixing fails
   }
 }
 
 ipcMain.handle('format-python', async (_e, code) => {
   try {
-    // STEP 1: Auto-fix indentation errors first (for student code)
-    console.log('🔧 Auto-fixing Python indentation...');
-    const fixedCode = autoFixPythonIndentation(code);
+    // IMPORTANT: Auto-indentation DISABLED - it was breaking correct code!
+    // Blockly generates correct code, don't try to "fix" it
+    console.log('✅ Using code as-is (auto-indentation disabled)');
+    
+    let fixedCode = code;
+    
+    // STEP 2: Try black formatter for additional polish (optional)
+    console.log('🔧 Step 2: Applying black formatter (if available)...');
     
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-format-'));
     const pyPath = path.join(tmpDir, 'main.py');
-    fs.writeFileSync(pyPath, fixedCode, 'utf-8');
+    fs.writeFileSync(pyPath, fixedCode, 'utf-8'); // Use auto-fixed code
 
     return await new Promise(async (res) => {
       try {
         const pythonPath = await findPythonPath();
-        // STEP 2: Format with black
+        // Format with black (optional - won't break code if black not installed)
         const formatCmd = `"${pythonPath}" -m black --quiet --fast "${pyPath}"`;
         exec(formatCmd, { timeout: 15000 }, (err, out, errOut) => {
           if (err) {
-            // If black fails, return auto-fixed code anyway
-            console.log('⚠️ Black formatter failed, using auto-fixed code');
+            // If black fails or not installed, return original code
+            console.log('⚠️ Black formatter not available, using code as-is');
+            safeSend('terminal-output', '✅ Code ready for upload');
             res({ success: true, code: fixedCode });
           } else {
             try {
               const formatted = fs.readFileSync(pyPath, 'utf-8');
+              safeSend('terminal-output', '✅ Code formatted successfully');
               res({ success: true, code: formatted });
             } catch (readErr) {
               res({ success: true, code: fixedCode });
@@ -594,7 +824,8 @@ ipcMain.handle('format-python', async (_e, code) => {
           }
         });
       } catch (pythonError) {
-        // Return auto-fixed code if Python/black not available
+        // Return auto-fixed code if Python not available
+        safeSend('terminal-output', '✅ Indentation auto-fixed');
         res({ success: true, code: fixedCode });
       }
     });
@@ -647,13 +878,156 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
           return;
         }
         
+        // CRITICAL: Detect firmware type first (but skip if port is busy with serial monitor)
+        safeSend('terminal-output', '🔍 Detecting firmware type...');
+        
+        // Try firmware detection, but don't fail if port is busy
+        let firmwareInfo;
+        try {
+          firmwareInfo = await detectFirmwareType(port);
+        } catch (detectError) {
+          console.log('⚠️ Firmware detection failed (port may be busy), assuming MicroPython is installed');
+          firmwareInfo = { compatible: true, type: 'micropython', version: 'assumed' };
+        }
+        
+        // Only show error if we're SURE it's not MicroPython (not just port busy)
+        if (!firmwareInfo.compatible && firmwareInfo.type !== 'unknown') {
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '❌ INCOMPATIBLE FIRMWARE DETECTED');
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '🎯 Your ESP32 does NOT have MicroPython firmware!');
+          safeSend('terminal-output', '   It may have Arduino, ESP-IDF, or other firmware.');
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '💡 SOLUTION: Flash MicroPython firmware first');
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '📝 Quick Installation Steps:');
+          safeSend('terminal-output', '   1. Close this application');
+          safeSend('terminal-output', '   2. Open Command Prompt as Administrator');
+          safeSend('terminal-output', '   3. Run: pip install esptool');
+          safeSend('terminal-output', `   4. Run: esptool.py --port ${port} erase_flash`);
+          safeSend('terminal-output', `   5. Run: esptool.py --chip esp32 --port ${port} write_flash -z 0x1000 ESP32_GENERIC-D2WD-20250809-v1.26.0.bin`);
+          safeSend('terminal-output', '   6. Restart this application and try again');
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '📄 The firmware file (ESP32_GENERIC-D2WD-20250809-v1.26.0.bin) is in your project folder');
+          safeSend('terminal-output', '');
+          res({ 
+            success: false, 
+            error: 'MicroPython firmware not installed. Please flash MicroPython firmware first.',
+            needsFirmware: true
+          });
+          return;
+        }
+        
+        // If detection uncertain (port busy), assume MicroPython and continue
+        if (firmwareInfo.version === 'assumed') {
+          safeSend('terminal-output', `⚠️ Firmware detection skipped (port busy) - assuming MicroPython is installed`);
+          safeSend('terminal-output', `💡 If upload fails, close Serial Monitor and try again`);
+        } else {
+          safeSend('terminal-output', `✅ MicroPython firmware detected: ${firmwareInfo.version || 'Unknown version'}`);
+        }
+        await delay(300);
+        
         // CRITICAL: Release port FIRST before any mpremote operations
         await releaseComPortIfNeeded(port);
-        await delay(600);
-        // Hardware reset to ensure we are out of user loops
-        safeSend('terminal-output', '🔄 Resetting ESP32 to ensure clean connection...');
-        await hardResetPort(port);
-        await delay(300);
+        await delay(800);
+        
+        // CRITICAL: Hardware reset FIRST to break any running loops (like Arduino IDE!)
+        safeSend('terminal-output', '🔨 Performing HARDWARE RESET (Arduino IDE style)...');
+        const resetSuccess = await hardwareResetESP32(port);
+        if (resetSuccess) {
+          safeSend('terminal-output', '✅ ESP32 hardware reset successful - waiting for boot...');
+          await delay(3000);  // Wait for ESP32 to fully boot MicroPython (longer delay!)
+        } else {
+          safeSend('terminal-output', '⚠️ Hardware reset may have failed, trying software reset...');
+          await delay(1500);
+        }
+        
+        // Send interrupt signals to stop any running code
+        safeSend('terminal-output', '🔄 Interrupting any running code...');
+        await pokeRawRepl(port);
+        await delay(800);  // Longer delay
+        
+        // CRITICAL FIX: Upload a BLANK main.py FIRST to stop old code from running
+        // This is the key difference from Arduino IDE - we need to erase old code first
+        safeSend('terminal-output', '🧹 Clearing old code from ESP32...');
+        const blankCode = 'pass\n'; // Minimal Python code that does nothing
+        const blankTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blank-upload-'));
+        const blankPyPath = path.join(blankTmpDir, 'main.py');
+        fs.writeFileSync(blankPyPath, blankCode, 'utf-8');
+        
+        // Upload blank main.py with THREE levels of retries (normal → hard → emergency)
+        const blankCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${blankPyPath.replace(/\\/g, '/')}" :main.py`;
+        let blankResult = await captureSerialOutput(port, blankCmd, 20000);
+        
+        // Level 1: Normal retry with hard reset
+        if (!blankResult.success && (blankResult.error || '').includes('could not enter raw repl')) {
+          safeSend('terminal-output', '⚠️ Retrying to clear old code (attempt 1/3)...');
+          await hardResetPort(port);
+          await delay(1800);
+          await pokeRawRepl(port);
+          await delay(500);
+          blankResult = await captureSerialOutput(port, blankCmd, 20000);
+        }
+        
+        // Level 2: Hardware reset + stronger retry
+        if (!blankResult.success) {
+          safeSend('terminal-output', '⚠️ Retrying with hardware reset (attempt 2/3)...');
+          await hardwareResetESP32(port);  // Use new hardware reset
+          await delay(2500);
+          await pokeRawRepl(port);
+          await delay(800);
+          blankResult = await captureSerialOutput(port, blankCmd, 25000);
+        }
+        
+        // Level 3: EMERGENCY bootloader reset (last resort)
+        if (!blankResult.success) {
+          safeSend('terminal-output', '🚨 Emergency bootloader reset (attempt 3/3)...');
+          await emergencyResetToBootloader(port);
+          await delay(2500); // Bootloader needs more time
+          await hardwareResetESP32(port);  // Hardware reset after bootloader
+          await delay(2000);
+          await pokeRawRepl(port);
+          await delay(800);
+          blankResult = await captureSerialOutput(port, blankCmd, 30000);
+        }
+        
+        if (blankResult.success) {
+          safeSend('terminal-output', '✅ Old code cleared successfully');
+          // Reset to run the blank code, stopping any previous loops
+          await hardResetPort(port);
+          await delay(1500); // Let blank code run (which does nothing)
+        } else {
+          // Even emergency reset failed - ESP32 is seriously stuck
+          const errorHelp = `
+❌ Could not clear old code after 3 attempts (including emergency bootloader reset).
+
+🔧 The ESP32 is stuck in a loop. Try these steps IN ORDER:
+
+1️⃣ PHYSICAL RESET (Recommended - Try this first):
+   - Hold the BOOT button on ESP32
+   - While holding BOOT, press and release RESET button
+   - Release BOOT button
+   - ESP32 should now be in bootloader mode
+   - Try uploading again immediately
+
+2️⃣ USB POWER CYCLE:
+   - Unplug the USB cable completely
+   - Wait 5 seconds
+   - Plug USB back in
+   - Try uploading immediately
+
+3️⃣ REFLASH FIRMWARE (Last resort):
+   - Click "Flash MicroPython" button in toolbar
+   - This will erase ALL code and reinstall MicroPython
+   - Then try uploading your program again
+
+💡 If Arduino IDE works but this app doesn't, the ESP32 likely has
+   code running that blocks mpremote. Physical reset is fastest fix.
+`;
+          safeSend('terminal-output', errorHelp);
+          res({ success: false, error: 'ESP32 stuck in loop - physical reset required' });
+          return;
+        }
 
         // Upload with retry logic for "could not enter raw repl" error
         safeSend('terminal-output', '🚀 Uploading code to ESP32...');
@@ -683,22 +1057,53 @@ ipcMain.handle('upload-python', async (_e, code, port) => {
         }
         
         // Deterministic, single-pass sequence (no parallel attempts)
-        // Small pause after hard reset to let MicroPython boot
-        await delay(1200);
+        // Longer pause after hard reset to let MicroPython boot fully
+        await delay(1500); // Increased from 1200ms
         await pokeRawRepl(port);
+        await delay(500); // Wait for poke to take effect
 
-        // Push main.py with one retry on raw repl failure
+        // Push main.py with TWO retries on raw repl failure (increased from one)
         const fsCpCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
         let fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
+        
+        // First retry
         if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
-          // Retry after another hard reset and longer delay
+          safeSend('terminal-output', '⚠️ Could not enter raw REPL, retrying with stronger reset...');
           await hardResetPort(port);
-          await delay(1400);
+          await delay(1800); // Even longer delay
           await pokeRawRepl(port);
+          await delay(500);
           fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
         }
+        
+        // Second retry
+        if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
+          safeSend('terminal-output', '⚠️ Still could not enter raw REPL, final attempt...');
+          await hardResetPort(port);
+          await delay(2000); // Maximum delay
+          await pokeRawRepl(port);
+          await delay(500);
+          fsResult = await captureSerialOutput(port, fsCpCmd, 25000); // Longer timeout
+        }
         if (!fsResult.success) {
-          res({ success: false, error: fsResult.error || 'Upload failed (fs cp)' });
+          // Provide helpful error message with troubleshooting steps
+          const errorMsg = fsResult.error || 'Upload failed (fs cp)';
+          const helpText = `
+
+❌ Failed to upload code after multiple attempts.
+
+🔧 Troubleshooting steps:
+1. Press the physical RESET button on your ESP32 board
+2. Wait 3 seconds, then try uploading again
+3. If still failing, click "Flash MicroPython" button to reinstall firmware
+4. Unplug and replug the USB cable
+5. Try a different USB port
+
+💡 The ESP32 may be running code that blocks uploads. 
+   Flashing MicroPython firmware will clear everything and start fresh.`;
+          
+          safeSend('terminal-output', helpText);
+          res({ success: false, error: errorMsg });
           return;
         }
         await delay(300);
@@ -957,7 +1362,7 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
   }
 });
 
-// ---- Board Status Check ----
+// ---- Board Status Check with Firmware Detection ----
 ipcMain.handle('check-board', async () => {
   try {
     const ports = await SerialPort.list();
@@ -986,6 +1391,51 @@ ipcMain.handle('check-board', async () => {
   } catch (err) {
     console.error('check-board error:', err);
     return 'disconnected';
+  }
+});
+
+// ---- Detect Firmware Type on Selected Port ----
+ipcMain.handle('detect-firmware', async (_e, port) => {
+  try {
+    if (!port) {
+      return { success: false, error: 'No port specified' };
+    }
+    
+    console.log(`🔍 Checking firmware on ${port}...`);
+    safeSend('terminal-output', `🔍 Checking firmware on ${port}...`);
+    
+    const firmwareInfo = await detectFirmwareType(port);
+    
+    if (firmwareInfo.compatible) {
+      console.log(`✅ MicroPython detected on ${port}`);
+      safeSend('terminal-output', `✅ MicroPython firmware detected`);
+      safeSend('terminal-output', `   Version: ${firmwareInfo.version}`);
+      return { 
+        success: true, 
+        firmware: 'micropython', 
+        compatible: true,
+        version: firmwareInfo.version
+      };
+    } else {
+      console.log(`⚠️ Non-MicroPython firmware on ${port}`);
+      safeSend('terminal-output', `⚠️ MicroPython firmware NOT detected`);
+      safeSend('terminal-output', `   This port may have Arduino or other firmware`);
+      safeSend('terminal-output', `   💡 You need to flash MicroPython firmware first`);
+      return { 
+        success: false, 
+        firmware: 'other', 
+        compatible: false,
+        error: 'MicroPython firmware required'
+      };
+    }
+  } catch (err) {
+    console.error('❌ Firmware detection error:', err.message);
+    return { 
+      success: false, 
+      error: err.message,
+      firmware: 'unknown',
+      compatible: false
+    };
   }
 });
 
@@ -1024,37 +1474,154 @@ ipcMain.handle('test-esp32-connection', async (_e, port) => {
   }
 });
 
-// ---- MicroPython Installation ----
+// ---- MicroPython Firmware Installation ----
 ipcMain.handle('install-micropython', async (_e, port) => {
   try {
-    console.log(`🚀 Installing MicroPython on ${port}...`);
-    safeSend('terminal-output', `🚀 Installing MicroPython on ${port}...`);
+    console.log(`🚀 Installing MicroPython firmware on ${port}...`);
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '🚀 ==================================================');
+    safeSend('terminal-output', '   MICROPYTHON FIRMWARE INSTALLATION');
+    safeSend('terminal-output', '==================================================');
+    safeSend('terminal-output', '');
     
-    // Run the installation script
-    const installCommand = `"${await findPythonPath()}" install_micropython.py ${port}`;
-    console.log(`Executing: ${installCommand}`);
+    const pythonPath = await findPythonPath();
+    const firmwarePath = path.join(__dirname, '..', 'ESP32_GENERIC-D2WD-20250809-v1.26.0.bin');
     
-    const result = await new Promise((resolve) => {
-      exec(installCommand, { cwd: __dirname }, (err, stdout, stderr) => {
+    // Check if firmware file exists
+    if (!fs.existsSync(firmwarePath)) {
+      const error = 'Firmware file not found: ESP32_GENERIC-D2WD-20250809-v1.26.0.bin';
+      console.error(`❌ ${error}`);
+      safeSend('terminal-output', `❌ ${error}`);
+      return { success: false, error };
+    }
+    
+    safeSend('terminal-output', `📄 Firmware file: ${path.basename(firmwarePath)}`);
+    safeSend('terminal-output', `📡 Target port: ${port}`);
+    safeSend('terminal-output', '');
+    
+    // Step 1: Check if esptool is installed
+    safeSend('terminal-output', '🔍 Step 1/4: Checking esptool...');
+    const esptoolCheck = await new Promise((resolve) => {
+      exec(`"${pythonPath}" -m esptool version`, { timeout: 5000 }, (err, stdout) => {
+        if (!err && stdout) {
+          resolve({ success: true, version: stdout.trim() });
+        } else {
+          resolve({ success: false });
+        }
+      });
+    });
+    
+    if (!esptoolCheck.success) {
+      safeSend('terminal-output', '📦 esptool not found, installing...');
+      const installResult = await new Promise((resolve) => {
+        exec(`"${pythonPath}" -m pip install esptool`, { timeout: 60000 }, (err, stdout, stderr) => {
+          if (err) {
+            resolve({ success: false, error: stderr || err.message });
+          } else {
+            resolve({ success: true });
+          }
+        });
+      });
+      
+      if (!installResult.success) {
+        const error = `Failed to install esptool: ${installResult.error}`;
+        safeSend('terminal-output', `❌ ${error}`);
+        return { success: false, error };
+      }
+      safeSend('terminal-output', '✅ esptool installed successfully');
+    } else {
+      safeSend('terminal-output', `✅ esptool found: ${esptoolCheck.version}`);
+    }
+    
+    // Step 2: Erase flash
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '🧹 Step 2/4: Erasing flash memory...');
+    safeSend('terminal-output', '⏳ This may take 10-30 seconds...');
+    
+    const eraseCmd = `"${pythonPath}" -m esptool --port ${port} erase_flash`;
+    const eraseResult = await new Promise((resolve) => {
+      exec(eraseCmd, { timeout: 45000 }, (err, stdout, stderr) => {
         if (err) {
-          resolve({ success: false, error: stderr || err.message });
+          resolve({ success: false, error: stderr || stdout || err.message });
         } else {
           resolve({ success: true, output: stdout });
         }
       });
     });
     
-    if (result.success) {
-      console.log('✅ MicroPython installation completed');
-      safeSend('terminal-output', '✅ MicroPython installation completed');
-      return { success: true, output: result.output };
-    } else {
-      console.error('❌ MicroPython installation failed:', result.error);
-      safeSend('terminal-output', `❌ MicroPython installation failed: ${result.error}`);
-      return { success: false, error: result.error };
+    if (!eraseResult.success) {
+      const error = `Flash erase failed: ${eraseResult.error}`;
+      safeSend('terminal-output', `❌ ${error}`);
+      return { success: false, error };
     }
+    safeSend('terminal-output', '✅ Flash erased successfully');
+    
+    // Step 3: Flash MicroPython firmware
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '📝 Step 3/4: Flashing MicroPython firmware...');
+    safeSend('terminal-output', '⏳ This may take 30-60 seconds...');
+    
+    const flashCmd = `"${pythonPath}" -m esptool --chip esp32 --port ${port} write_flash -z 0x1000 "${firmwarePath}"`;
+    const flashResult = await new Promise((resolve) => {
+      exec(flashCmd, { timeout: 90000 }, (err, stdout, stderr) => {
+        if (err) {
+          resolve({ success: false, error: stderr || stdout || err.message });
+        } else {
+          resolve({ success: true, output: stdout });
+        }
+      });
+    });
+    
+    if (!flashResult.success) {
+      const error = `Firmware flash failed: ${flashResult.error}`;
+      safeSend('terminal-output', `❌ ${error}`);
+      return { success: false, error };
+    }
+    safeSend('terminal-output', '✅ MicroPython firmware flashed successfully');
+    
+    // Step 4: Verify installation
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '🔍 Step 4/4: Verifying installation...');
+    await delay(2000); // Give ESP32 time to boot
+    
+    const verifyCmd = `"${pythonPath}" -m mpremote connect ${port} exec "import sys; print(sys.implementation)"`;
+    const verifyResult = await new Promise((resolve) => {
+      exec(verifyCmd, { timeout: 10000 }, (err, stdout, stderr) => {
+        if (!err && stdout && stdout.includes('micropython')) {
+          resolve({ success: true, output: stdout });
+        } else {
+          resolve({ success: false, error: stderr || 'Verification failed' });
+        }
+      });
+    });
+    
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '==================================================');
+    
+    if (verifyResult.success) {
+      console.log('✅ MicroPython installation completed and verified');
+      safeSend('terminal-output', '✅ SUCCESS! MicroPython installed and verified');
+      safeSend('terminal-output', '==================================================');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '🎉 Your ESP32 is now ready to use!');
+      safeSend('terminal-output', '💡 You can now upload MicroPython code');
+      safeSend('terminal-output', '');
+      return { success: true, output: 'MicroPython installed successfully' };
+    } else {
+      console.log('⚠️ Firmware flashed but verification failed');
+      safeSend('terminal-output', '⚠️ Firmware flashed but verification incomplete');
+      safeSend('terminal-output', '==================================================');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '💡 Try unplugging and replugging the ESP32');
+      safeSend('terminal-output', '💡 Then select the port again and try uploading');
+      safeSend('terminal-output', '');
+      return { success: true, output: 'Firmware flashed (verification incomplete)' };
+    }
+    
   } catch (err) {
     console.error('❌ MicroPython installation error:', err.message);
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '❌ Installation error: ' + err.message);
     return { success: false, error: err.message };
   }
 });

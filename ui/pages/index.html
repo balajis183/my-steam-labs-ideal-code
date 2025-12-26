@@ -235,7 +235,7 @@
         <div id="terminal-header">
           <span id="terminal-title">Serial Monitor / Terminal</span>
           <div id="terminal-controls">
-            <button class="terminal-btn" onclick="manualOpenSerialMonitor()" title="Open/reopen serial monitor to see ESP32 output">📡 Serial Monitor</button>
+            <!-- Serial Monitor button removed - auto-opens after upload -->
             <input type="text" id="serial-input" placeholder="Type to send to serial port..." style="padding: 4px; margin-right: 5px; border: 1px solid #ccc; border-radius: 3px;" onkeypress="if(event.key === 'Enter') { sendSerialInput(); }">
             <button class="terminal-btn" onclick="sendSerialInput()">Send</button>
             <button class="terminal-btn" onclick="clearTerminal()">Clear</button>

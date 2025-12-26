@@ -720,7 +720,7 @@ async function uploadCode() {
         } catch (monitorErr) {
           console.error('❌ [SERIAL MONITOR] Error opening:', monitorErr);
           appendTerminalOutput(`⚠️ Error opening serial monitor: ${monitorErr.message}`);
-          appendTerminalOutput(`💡 Try clicking the 📡 Serial Monitor button or press RESET on ESP32`);
+          appendTerminalOutput(`💡 Try pressing the physical RESET button on your ESP32 board`);
         }
       }
     } else {
@@ -954,19 +954,8 @@ async function openSerialMonitor(portPath, silent = false) {
   }
 }
 
-// Manual Serial Monitor button (Arduino-style)
-async function manualOpenSerialMonitor() {
-  if (!currentPort) {
-    appendTerminalOutput('❌ No port selected. Please select a port first.');
-    return;
-  }
-  showTerminal();
-  appendTerminalOutput(`🔄 Opening serial monitor on ${currentPort}...`);
-  await openSerialMonitor(currentPort, true);
-  appendTerminalOutput(`✅ Serial monitor opened - you can see ESP32 output now`);
-}
-
-window.manualOpenSerialMonitor = manualOpenSerialMonitor;
+// Manual Serial Monitor function removed - Serial Monitor now opens automatically after upload
+// This prevents port conflicts and provides a better user experience
 
 // Port selection handler (no auto monitor)
 async function selectPort(portPath, silent = false) {
