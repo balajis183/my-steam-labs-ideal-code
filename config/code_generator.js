@@ -1,39 +1,4 @@
-/**
- * Enhanced MicroPython Code Generator for MY STEAM LAB
- * 
- * ⚠️ IMPORTANT: This generator produces MICROPYTHON code ONLY (not C/C++)
- * 
- * Features:
- * - Fixed pin mapping from PIN MAPPING.pdf
- * - Auto-import required libraries based on blocks used
- * - Proper MicroPython code structure (ESP32-compatible)
- * - Ready-to-upload ESP32 MicroPython code
- * - Uses MicroPython-specific APIs (machine module, not Arduino/C++)
- * 
- * ⚠️ CRITICAL HARDWARE SETTINGS:
- * - Baud Rate: 115200 (FIXED - DO NOT CHANGE)
- *   This is the fixed serial communication speed for this ESP32 board.
- *   All serial communication (upload, monitor, REPL) uses 115200 baud.
- */
-
-/**
- * PIN MAPPING CONFIGURATION
- * 
- * ⚠️ IMPORTANT: These pin mappings MUST match PIN MAPPING.pdf exactly!
- * 
- * DO NOT use placeholder values - update this object with the exact GPIO pin numbers
- * from the PIN MAPPING.pdf document provided by the client.
- * 
- * To update:
- * 1. Open PIN MAPPING.pdf
- * 2. Find each component's GPIO pin numbers
- * 3. Update the values below to match exactly
- * 4. Save this file
- * 
- * The code generator uses these mappings to generate MicroPython code with fixed pins.
- */
 const PIN_MAPPING = {
-  // ✅ UPDATED FROM PIN MAPPING.pdf - Exact GPIO pins as per client specification
   motors: {
     M1: { pinA: 19, pinB: 18, enable: null },  // ✅ Motor M1: io19, io18 (from PDF)
     M2: { pinA: 5, pinB: 17, enable: null },   // ✅ Motor M2: io5, io17 (from PDF)
@@ -54,8 +19,7 @@ const PIN_MAPPING = {
   },
   oled: { sda: 13, scl: 15, address: "0x3C" },  // ✅ OLED: SDA io13, SCL io15 (from PDF)
   servo: {
-    servo1: { pin: null },  // Servo pins not specified in PDF
-    servo2: { pin: null }   // Servo pins not specified in PDF
+    servo1: { pin: 23 }  // ✅ Servo at GPIO23 (IO23) - from client specification
   }
 };
 
@@ -65,6 +29,7 @@ const LIBRARY_MAPPING = {
     dc_motor: ["machine"],
     motor_speed: ["machine"],
     servo_motor: ["machine", "servo"],
+    servo_angle: ["machine", "servo"],
     ldr_sensor: ["machine"],
     ir_sensor: ["machine"],
     ir_sensor_analog: ["machine"],
@@ -109,9 +74,6 @@ const LIBRARY_MAPPING = {
   }
 };
 
-/**
- * Detect which blocks are used in the workspace
- */
 function detectUsedBlocks(workspace) {
   const usedBlocks = new Set();
   const allBlocks = workspace.getAllBlocks(false);
@@ -131,9 +93,7 @@ function detectUsedBlocks(workspace) {
   return Array.from(usedBlocks);
 }
 
-/**
- * Get required libraries based on used blocks
- */
+
 function getRequiredLibraries(usedBlocks) {
   const requiredLibs = new Set();
   
@@ -147,9 +107,7 @@ function getRequiredLibraries(usedBlocks) {
   return Array.from(requiredLibs);
 }
 
-/**
- * Generate imports section
- */
+
 function generateImports(requiredLibraries) {
   const imports = [];
   const importOrder = ["machine", "time", "hcsr04", "ssd1306", "servo", "dht", "tcs34725", "network", "socket", "ubluetooth"];
@@ -163,9 +121,7 @@ function generateImports(requiredLibraries) {
   return imports.join("\n");
 }
 
-/**
- * Generate pin definitions based on used blocks
- */
+
 function generatePinDefinitions(usedBlocks, pinMapping) {
   const definitions = [];
   const definedPins = new Set();
@@ -175,14 +131,14 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
     ["M1", "M2", "M3", "M4"].forEach(motor => {
       const mapping = pinMapping.motors[motor];
       if (mapping) {
-        definitions.push(`M${motor}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
-        definitions.push(`M${motor}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
+        definitions.push(`${motor}_PIN_A = Pin(${mapping.pinA}, Pin.OUT)`);
+        definitions.push(`${motor}_PIN_B = Pin(${mapping.pinB}, Pin.OUT)`);
         if (mapping.enable !== null && mapping.enable !== undefined) {
-          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.enable}))`);
+          definitions.push(`${motor}_PWM = PWM(Pin(${mapping.enable}))`);
         } else {
-          definitions.push(`M${motor}_PWM = PWM(Pin(${mapping.pinA}))`);
+          definitions.push(`${motor}_PWM = PWM(Pin(${mapping.pinA}))`);
         }
-        definitions.push(`M${motor}_PWM.freq(1000)`);
+        definitions.push(`${motor}_PWM.freq(1000)`);
         definitions.push("");
       }
     });
@@ -190,12 +146,18 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   
   // Sensor pins
   if (usedBlocks.includes("ldr_sensor")) {
+    definitions.push(`# LDR (Light Dependent Resistor) sensor setup`);
     definitions.push(`LDR_PIN = ADC(Pin(${pinMapping.sensors.ldr.pin}))`);
+    definitions.push(`LDR_PIN.atten(ADC.ATTN_11DB)  # Full range 0-3.3V`);
+    definitions.push(`LDR_PIN.width(ADC.WIDTH_12BIT)  # 12-bit resolution (0-4095)`);
     definitions.push("");
   }
   
   if (usedBlocks.includes("ir_sensor") || usedBlocks.includes("ir_sensor_analog")) {
+    definitions.push(`# IR sensor setup`);
     definitions.push(`IR_PIN = ADC(Pin(${pinMapping.sensors.ir.pin}))`);
+    definitions.push(`IR_PIN.atten(ADC.ATTN_11DB)  # Full range 0-3.3V`);
+    definitions.push(`IR_PIN.width(ADC.WIDTH_12BIT)  # 12-bit resolution (0-4095)`);
     definitions.push("");
   }
   
@@ -240,13 +202,9 @@ function generatePinDefinitions(usedBlocks, pinMapping) {
   }
   
   // Servo pins
-  if (usedBlocks.includes("servo_motor")) {
-    definitions.push(`SERVO1_PIN = Pin(${pinMapping.servo.servo1.pin})`);
-    definitions.push(`servo1 = servo.Servo(SERVO1_PIN)`);
-    if (pinMapping.servo.servo2) {
-      definitions.push(`SERVO2_PIN = Pin(${pinMapping.servo.servo2.pin})`);
-      definitions.push(`servo2 = servo.Servo(SERVO2_PIN)`);
-    }
+  if (usedBlocks.includes("servo_motor") || usedBlocks.includes("servo_angle")) {
+    definitions.push(`SERVO_PIN = Pin(${pinMapping.servo.servo1.pin})`);
+    definitions.push(`servo1 = servo.Servo(SERVO_PIN)`);
     definitions.push("");
   }
   
@@ -263,10 +221,10 @@ function generateHelperFunctions(usedBlocks) {
   if (usedBlocks.includes("dc_motor") || usedBlocks.includes("motor_speed")) {
     functions.push(`
 def set_motor(motor_id, speed, direction):
-    motor_num = motor_id[1]
-    pin_a_name = 'M' + str(motor_num) + '_PIN_A'
-    pin_b_name = 'M' + str(motor_num) + '_PIN_B'
-    pwm_name = 'M' + str(motor_num) + '_PWM'
+    """Control DC motor with direction and speed"""
+    pin_a_name = motor_id + '_PIN_A'
+    pin_b_name = motor_id + '_PIN_B'
+    pwm_name = motor_id + '_PWM'
     pin_a = globals()[pin_a_name]
     pin_b = globals()[pin_b_name]
     pwm = globals()[pwm_name]
@@ -293,7 +251,6 @@ def read_ultrasonic():
     try:
         distance = ULTRASONIC_SENSOR.distance_cm()
         if distance is not None:
-            # Format exactly like Arduino IDE
             print("Distance:", round(distance), "cm")
             return distance
         else:
@@ -309,8 +266,22 @@ def read_ultrasonic():
   if (usedBlocks.includes("ldr_sensor")) {
     functions.push(`
 def read_ldr():
+    """Read LDR sensor value and show light level"""
     value = LDR_PIN.read()
-    print("LDR:", value)
+    
+    # Determine light level
+    if value < 500:
+        level = "Very Dark"
+    elif value < 1500:
+        level = "Dark"
+    elif value < 2500:
+        level = "Normal"
+    elif value < 3500:
+        level = "Bright"
+    else:
+        level = "Very Bright"
+    
+    print("Light:", value, "(" + level + ")")
     return value
 `);
   }
@@ -337,38 +308,29 @@ def read_ir_analog():
   if (usedBlocks.includes("temp_sensor")) {
     functions.push(`
 def read_temperature():
-    """Read temperature from analog sensor (LM35/TMP36)"""
+    """Read temperature from analog sensor"""
     try:
-        # Take multiple readings and average for stability
+        # Average multiple readings for stability
         total = 0
         samples = 10
         for _ in range(samples):
             total += temp_adc.read()
-            time.sleep(0.01)  # 10ms between samples
+            time.sleep(0.01)
         
         raw_value = total // samples
         
-        # Check if sensor is connected (floating pin reads very high)
         if raw_value > 3800:
             print("Temperature: Sensor not connected")
             return 0.0
         
-        # Convert ADC value to voltage (3.3V reference, 12-bit ADC)
+        # Convert to voltage and temperature
         voltage = raw_value * (3.3 / 4095)
-        
-        # Convert voltage to temperature
-        # For LM35: temperature = voltage * 100 (10mV per °C, no offset)
-        # For TMP36: temperature = (voltage - 0.5) * 100 (10mV per °C, 500mV offset at 0°C)
-        
-        # Using LM35 formula (if readings too high, sensor might be TMP36)
         temperature = voltage * 100
         
-        # Sanity check: room temp should be 15-35°C
+        # Validate range
         if temperature < 0 or temperature > 100:
-            # Try TMP36 formula instead
             temperature = (voltage - 0.5) * 100
         
-        # Format like Arduino IDE (whole numbers)
         print("Temperature:", round(temperature), "°C")
         return temperature
     except Exception as e:
@@ -429,11 +391,11 @@ def show_on_oled(text, x, y, color='white'):
  * Enhanced Python code generation with pin mapping and auto-imports
  */
 function generateEnhancedPythonCode(workspace) {
-  // ✅ VALIDATION: Verify pin mappings are correct (updated from PIN MAPPING.pdf)
-  console.log('✅ Pin mappings verified - using fixed pins from PIN MAPPING.pdf');
-  console.log(`✅ Motor M1: GPIO${PIN_MAPPING.motors.M1.pinA}, GPIO${PIN_MAPPING.motors.M1.pinB}`);
-  console.log(`✅ Joystick 1: V=GPIO${PIN_MAPPING.joystick.joystick1.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick1.horizontal}`);
-  console.log(`✅ Joystick 2: V=GPIO${PIN_MAPPING.joystick.joystick2.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick2.horizontal}`);
+  // Validate pin mappings
+  console.log('[INFO] Pin mappings loaded from configuration');
+  console.log(`[INFO] Motor M1: GPIO${PIN_MAPPING.motors.M1.pinA}, GPIO${PIN_MAPPING.motors.M1.pinB}`);
+  console.log(`[INFO] Joystick 1: V=GPIO${PIN_MAPPING.joystick.joystick1.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick1.horizontal}`);
+  console.log(`[INFO] Joystick 2: V=GPIO${PIN_MAPPING.joystick.joystick2.vertical}, H=GPIO${PIN_MAPPING.joystick.joystick2.horizontal}`);
   
   // Detect used blocks
   const usedBlocks = detectUsedBlocks(workspace);
@@ -442,7 +404,7 @@ function generateEnhancedPythonCode(workspace) {
   const requiredLibraries = getRequiredLibraries(usedBlocks);
   
   // Generate code sections
-  const header = `# MY STEAM LAB - MicroPython Code for ESP32
+  const header = `# MicroPython Code for ESP32
 # Generated: ${new Date().toLocaleString()}
 
 `;
@@ -468,10 +430,10 @@ function generateEnhancedPythonCode(workspace) {
         .replace(/#include\s+<.*>/g, '# MicroPython imports above')
         .replace(/Serial\.begin/g, '# MicroPython: use print() instead')
         .replace(/Serial\.print/g, 'print')
-        .replace(/digitalWrite/g, 'pin.value')  // MicroPython uses pin.value()
-        .replace(/digitalRead/g, 'pin.value')   // MicroPython uses pin.value()
-        .replace(/analogWrite/g, 'pwm.duty')    // MicroPython uses pwm.duty()
-        .replace(/analogRead/g, 'adc.read');     // MicroPython uses adc.read()
+        .replace(/digitalWrite/g, 'pin.value')
+        .replace(/digitalRead/g, 'pin.value')
+        .replace(/analogWrite/g, 'pwm.duty')
+        .replace(/analogRead/g, 'adc.read');
     } else {
       mainCode = "# Error: MicroPython generator not available\npass\n";
     }
@@ -501,15 +463,14 @@ function generateEnhancedPythonCode(workspace) {
         return '    ' + line;
       }).join('\n');
       
-      // MicroPython main loop structure with interrupt guard
-      // Using 1 second delay (like Arduino's delay(1000)) for readable sensor output
+      // MicroPython main loop structure
       mainCode = `def main():
 ${indentedCode}
 
 try:
     while True:
         main()
-        time.sleep(0.5)  # 500ms delay (exactly like Arduino IDE)
+        time.sleep(0.5)
 except KeyboardInterrupt:
     print("Program stopped")
     pass

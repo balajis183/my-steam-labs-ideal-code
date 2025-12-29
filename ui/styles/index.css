@@ -55,8 +55,8 @@ html, body {
   border-top: 1px solid #333;
   display: none;
   flex-direction: column;
-  min-height: 200px;
-  max-height: 50vh;
+  height: 320px; /* FIXED HEIGHT - Change this value to adjust terminal height (e.g., 300px, 400px) */
+  flex-shrink: 0; /* Prevent terminal from shrinking */
 }
 
 #terminal-header {
@@ -123,8 +123,17 @@ html, body {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
-  line-height: 1.4;
+  line-height: 1.6;
+  font-size: 13px;
 }
+
+/* Professional terminal status colors */
+#terminal-output .status-info { color: #4FC1FF; }
+#terminal-output .status-success { color: #73C991; font-weight: 500; }
+#terminal-output .status-warning { color: #E5C07B; }
+#terminal-output .status-error { color: #E06C75; font-weight: 500; }
+#terminal-output .status-section { color: #ABB2BF; font-weight: 600; }
+#terminal-output .command-output { color: #666; font-style: italic; }
 
 /* Terminal toggle button */
 #terminal-toggle {

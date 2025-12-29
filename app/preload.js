@@ -16,10 +16,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   formatPython: (code) => ipcRenderer.invoke('format-python', code),
   
   // Multi-Language Upload Functions
-  uploadPython: (code, port) => ipcRenderer.invoke('upload-python', code, port),
-  uploadJavaScript: (code, port) => ipcRenderer.invoke('upload-javascript', code, port),
-  uploadCpp: (code, port) => ipcRenderer.invoke('upload-cpp', code, port),
-  uploadC: (code, port) => ipcRenderer.invoke('upload-c', code, port),
+  uploadPython: (code, port, boardType) => ipcRenderer.invoke('upload-python', code, port, boardType),
+  uploadJavaScript: (code, port, boardType) => ipcRenderer.invoke('upload-javascript', code, port, boardType),
+  uploadCpp: (code, port, boardType) => ipcRenderer.invoke('upload-cpp', code, port, boardType),
+  uploadC: (code, port, boardType) => ipcRenderer.invoke('upload-c', code, port, boardType),
   
   // Multi-Language Run Functions
   runPython: (code, port) => ipcRenderer.invoke('run-python', code, port),

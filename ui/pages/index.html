@@ -11,10 +11,7 @@
     <script src="https://unpkg.com/blockly@12.0.0/lua.min.js"></script>
     <script src="https://unpkg.com/blockly@12.0.0/dart.min.js"></script>
     <script>
-      // Override Blockly.prompt IMMEDIATELY after Blockly loads
-      // This must happen before any Blockly code tries to use prompt()
       (function() {
-        // Wait for Blockly to be fully loaded
         const checkBlockly = setInterval(() => {
           if (typeof Blockly !== 'undefined' && Blockly.dialog && Blockly.dialog.setPrompt) {
             clearInterval(checkBlockly);
@@ -213,9 +210,6 @@
       <button onclick="copyCode()">Copy Code</button>
       <button onclick="saveCode()">Save Code</button>
       <button onclick="loadCode()">Load Code</button>
-      <!-- <button onclick="saveBlocksXML()">Save Blocks</button> -->
-      <!-- <button onclick="loadBlocksXML()">Load Blocks</button> -->
-      <!-- <button onclick="debugEditor()" title="Debug editor status">🐛 Debug</button> -->
       <button id="checkConnectionBtn">Check Board Status</button>
       <div id="connection-status" style="width:15px; height:15px; border-radius:50%; background-color:grey; display:inline-block; margin-left:10px;"></div>
     </div>

@@ -7,61 +7,61 @@
       "pinB": 18,
       "enable": null,
       "pwm": true,
-      "description": "✅ Motor M1: GPIO19 (A), GPIO18 (B) - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Motor M1: GPIO19 (A), GPIO18 (B)"
     },
     "M2": {
       "pinA": 5,
       "pinB": 17,
       "enable": null,
       "pwm": true,
-      "description": "✅ Motor M2: GPIO5 (A), GPIO17 (B) - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Motor M2: GPIO5 (A), GPIO17 (B)"
     },
     "M3": {
       "pinA": 23,
       "pinB": 22,
       "enable": null,
       "pwm": true,
-      "description": "✅ Motor M3: GPIO23 (A), GPIO22 (B) - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Motor M3: GPIO23 (A), GPIO22 (B)"
     },
     "M4": {
       "pinA": 21,
       "pinB": 16,
       "enable": null,
       "pwm": true,
-      "description": "✅ Motor M4: GPIO21 (A), GPIO16 (B) - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Motor M4: GPIO21 (A), GPIO16 (B)"
     }
   },
   "sensors": {
     "ldr": {
       "pin": 34,
       "type": "analog",
-      "description": "✅ LDR at GPIO34 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ LDR at GPIO34"
     },
     "ir": {
       "pin": 35,
       "type": "analog",
-      "description": "✅ IR at GPIO35 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ IR at GPIO35"
     },
     "temperature": {
       "pin": 32,
       "type": "analog",
-      "description": "✅ Temperature sensor at GPIO32 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Temperature sensor at GPIO32"
     },
     "ultrasonic": {
       "trig": 33,
       "echo": 32,
       "type": "digital",
-      "description": "✅ Ultrasonic: TRIG GPIO33, ECHO GPIO32 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Ultrasonic: TRIG GPIO33, ECHO GPIO32"
     },
     "touch": {
       "pin": 12,
       "type": "digital",
-      "description": "✅ Touch sensor at GPIO12 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Touch sensor at GPIO12"
     },
     "buzzer": {
       "pin": null,
       "type": "pwm",
-      "description": "Buzzer pin not specified in PIN MAPPING.pdf"
+      "description": "Buzzer pin"
     }
   },
   "joystick": {
@@ -69,13 +69,13 @@
       "vertical": 4,
       "horizontal": 2,
       "type": "analog",
-      "description": "✅ Joystick 1: V axis GPIO4, H axis GPIO2 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Joystick 1: V axis GPIO4, H axis GPIO2"
     },
     "joystick2": {
       "vertical": 26,
       "horizontal": 25,
       "type": "analog",
-      "description": "✅ Joystick 2: V axis GPIO26, H axis GPIO25 - Fixed from PIN MAPPING.pdf"
+      "description": "✅ Joystick 2: V axis GPIO26, H axis GPIO25"
     }
   },
   "oled": {
@@ -83,16 +83,13 @@
     "scl": 15,
     "type": "i2c",
     "address": "0x3C",
-    "description": "✅ OLED: SDA GPIO13, SCL GPIO15 - Fixed from PIN MAPPING.pdf"
+    "description": "✅ OLED: SDA GPIO13, SCL GPIO15"
   },
   "servo": {
     "servo1": {
-      "pin": null,
-      "description": "Servo pin not specified in PIN MAPPING.pdf"
-    },
-    "servo2": {
-      "pin": null,
-      "description": "Servo pin not specified in PIN MAPPING.pdf"
+      "pin": 23,
+      "type": "pwm",
+      "description": "✅ Servo Motor at GPIO23 (IO23)"
     }
   },
   "communication": {

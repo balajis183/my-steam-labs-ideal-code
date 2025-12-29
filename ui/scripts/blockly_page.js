@@ -160,7 +160,7 @@ setTimeout(() => {
         }
       }
     });
-    console.log('✅ Create Variable button callback registered');
+    console.log('[INFO] Create Variable button callback registered');
   } catch (error) {
     console.error('❌ Failed to register Create Variable callback:', error);
   }
@@ -208,7 +208,7 @@ function generatePythonCode() {
     // Use enhanced code generator if available
     if (typeof window.generateEnhancedPythonCode === 'function') {
       code = window.generateEnhancedPythonCode(workspace);
-      console.log('✅ Enhanced Python code generated with fixed pin mappings and auto-imports');
+      console.log('[SUCCESS] Enhanced Python code generated with fixed pin mappings');
     } else if (Blockly.Python) {
       // Fallback to standard generator
       code = Blockly.Python.workspaceToCode(workspace);
@@ -226,7 +226,7 @@ function generatePythonCode() {
         code = 'import time\n' + code;
       }
       
-      console.warn('⚠️ Using standard Python generator. Enhanced generator not loaded.');
+      console.warn('[WARNING] Using standard Python generator. Enhanced generator not loaded.');
     } else {
       throw new Error('Python generator missing');
     }
@@ -255,7 +255,7 @@ function generatePythonCode() {
   const langSelect = document.getElementById('languageSelect');
   if (langSelect) {
     langSelect.value = 'python';
-    console.log('✅ Language dropdown set to Python after code generation');
+    console.log('[INFO] Language dropdown set to Python after code generation');
   }
   
   // Show message that Python doesn't need compilation

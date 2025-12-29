@@ -565,6 +565,20 @@ if (!Blockly.Blocks['motor_speed']) {
   };
 }
 
+// 4b. SERVO ANGLE CONTROL (SIMPLIFIED)
+if (!Blockly.Blocks['servo_angle']) {
+  Blockly.Blocks['servo_angle'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Set servo angle to')
+        .appendField(new Blockly.FieldNumber(90, 0, 180), 'ANGLE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(20);
+      this.setTooltip('Set servo motor angle (0-180 degrees)');
+    }
+  };
+}
+
 // 5. IR SENSOR ANALOG READ
 if (!Blockly.Blocks['ir_sensor_analog']) {
   Blockly.Blocks['ir_sensor_analog'] = {

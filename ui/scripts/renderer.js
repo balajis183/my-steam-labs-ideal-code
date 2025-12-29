@@ -1,6 +1,7 @@
 console.log('⚡ renderer.js loaded');
 
 let currentPort = null;
+let currentBoardType = null; // NEW: Track board type
 let currentLanguage = 'python'; // Default language
 let lastGeneratedLanguage = 'python'; // Track last generated language
 let lastCompiledPath = null;
@@ -12,7 +13,24 @@ let isUploading = false;
 function appendTerminalOutput(message) {
   const terminalOutput = document.getElementById('terminal-output');
   if (terminalOutput) {
-    terminalOutput.textContent += message + '\n';
+    // Apply color coding for professional terminal look
+    let styledMessage = message;
+    if (message.includes('[SUCCESS]')) {
+      styledMessage = message.replace('[SUCCESS]', '<span style="color: #73C991; font-weight: 500;">[SUCCESS]</span>');
+    } else if (message.includes('[ERROR]')) {
+      styledMessage = message.replace('[ERROR]', '<span style="color: #E06C75; font-weight: 500;">[ERROR]</span>');
+    } else if (message.includes('[WARNING]')) {
+      styledMessage = message.replace('[WARNING]', '<span style="color: #E5C07B;">[WARNING]</span>');
+    } else if (message.includes('[INFO]')) {
+      styledMessage = message.replace('[INFO]', '<span style="color: #4FC1FF;">[INFO]</span>');
+    } else if (message.includes('[UPLOAD]') || message.includes('[COMPILE]') || message.includes('[RUN]') || message.includes('[SEND]')) {
+      styledMessage = message.replace(/\[(UPLOAD|COMPILE|RUN|SEND)\]/, '<span style="color: #ABB2BF; font-weight: 600;">[$1]</span>');
+    }
+    
+    // Append as HTML for colored output
+    const lineDiv = document.createElement('div');
+    lineDiv.innerHTML = styledMessage;
+    terminalOutput.appendChild(lineDiv);
     
     // Auto-scroll to bottom (scroll the container, not the output element)
     const terminalContent = document.getElementById('terminal-content');
@@ -25,7 +43,7 @@ function appendTerminalOutput(message) {
 function clearTerminal() {
   const terminalOutput = document.getElementById('terminal-output');
   if (terminalOutput) {
-    terminalOutput.textContent = '';
+    terminalOutput.innerHTML = ''; // Changed from textContent to innerHTML for colored output
   }
 }
 
@@ -236,11 +254,11 @@ async function autoDetectLanguage() {
   const code = getCurrentCode();
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to analyze. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to analyze. Please generate some code first.');
     return;
   }
   
-  appendTerminalOutput('🔍 Auto-detecting language and hardware requirements...');
+  appendTerminalOutput('\n[INFO] Auto-detecting language and hardware requirements...');
   
   // Detect language
   let detectedLanguage = 'unknown';
@@ -269,20 +287,20 @@ async function autoDetectLanguage() {
   setCurrentLanguage(detectedLanguage);
   
   // Display results
-  appendTerminalOutput(`✅ Language detected: ${detectedLanguage.toUpperCase()}`);
-  appendTerminalOutput(`🔧 Hardware type: ${hardwareType}`);
+  appendTerminalOutput(`[SUCCESS] Language detected: ${detectedLanguage.toUpperCase()}`);
+  appendTerminalOutput(`[INFO] Hardware type: ${hardwareType}`);
   
   if (needsHardware) {
     if (currentPort) {
-      appendTerminalOutput(`✅ Hardware port selected: ${currentPort}`);
-      appendTerminalOutput(`💡 Ready to upload and run on hardware!`);
+      appendTerminalOutput(`[SUCCESS] Hardware port: ${currentPort}`);
+      appendTerminalOutput(`[INFO] Ready to upload and run on hardware\n`);
     } else {
-      appendTerminalOutput(`⚠️ Hardware code detected but no port selected`);
-      appendTerminalOutput(`💡 Please select a port to upload to hardware`);
+      appendTerminalOutput(`[WARNING] Hardware code detected but no port selected`);
+      appendTerminalOutput(`[INFO] Please select a port to upload to hardware\n`);
     }
   } else {
-    appendTerminalOutput(`✅ Standard code - can run locally`);
-    appendTerminalOutput(`💡 Use "Run" button to execute locally`);
+    appendTerminalOutput(`[SUCCESS] Standard code - can run locally`);
+    appendTerminalOutput(`[INFO] Use "Run" button to execute locally\n`);
   }
   
   appendTerminalOutput(`🎯 Auto-detection complete!`);
@@ -495,7 +513,7 @@ async function compileCode() {
   const code = getCurrentCode();
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to compile. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to compile. Please generate some code first.');
     return;
   }
   
@@ -511,9 +529,8 @@ async function compileCode() {
   
   // ⚠️ IMPORTANT: Python/MicroPython doesn't need compilation!
   if (language === 'python') {
-    appendTerminalOutput('⚠️ Python/MicroPython is an interpreted language - no compilation needed!');
-    appendTerminalOutput('💡 Use "Upload" button to upload MicroPython code to ESP32');
-    appendTerminalOutput('💡 Or use "Run" button to execute the code');
+    appendTerminalOutput('[INFO] Python/MicroPython is an interpreted language');
+    appendTerminalOutput('[INFO] Use "Upload" to transfer to ESP32 or "Run" to execute locally');
     showTerminal();
     return;
   }
@@ -521,14 +538,14 @@ async function compileCode() {
   // Automatically show terminal when compiling
   showTerminal();
   
-  appendTerminalOutput(`🔄 Compiling ${language} code...`);
+  appendTerminalOutput(`\n[COMPILE] Compiling ${language} code...`);
   
   try {
     let result;
     switch (language) {
       case 'python':
         // Should not reach here, but handle just in case
-        appendTerminalOutput('⚠️ Python code does not need compilation. Use Upload or Run instead.');
+        appendTerminalOutput('[INFO] Python code does not need compilation. Use Upload or Run instead.');
         return;
       case 'javascript':
         result = await window.electronAPI.compileJavaScript(code);
@@ -540,29 +557,40 @@ async function compileCode() {
         result = await window.electronAPI.compileC(code);
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language: ${language}`);
         return;
     }
     
     if (result.success) {
-      appendTerminalOutput(`✅ Compilation successful!`);
+      appendTerminalOutput(`[SUCCESS] Compilation successful!\n`);
       appendTerminalOutput(result.output || 'No output');
       lastCompiledPath = result.compiledPath;
       lastCompiledSuccess = true;
     } else {
-      appendTerminalOutput(`❌ Compilation failed:`);
+      appendTerminalOutput(`[ERROR] Compilation failed:`);
       appendTerminalOutput(result.error);
       lastCompiledSuccess = false;
     }
   } catch (error) {
-    appendTerminalOutput(`❌ Compilation error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Compilation error: ${error.message}`);
     lastCompiledSuccess = false;
   }
 }
 
 async function uploadCode() {
+  // Auto-open terminal when upload is clicked
+  const terminalPanel = document.getElementById('terminal-panel');
+  const toggleBtn = document.getElementById('terminal-toggle');
+  if (terminalPanel && terminalPanel.style.display === 'none') {
+    terminalPanel.style.display = 'flex';
+    if (toggleBtn) toggleBtn.textContent = 'Hide Terminal';
+    if (typeof terminalVisible !== 'undefined') {
+      terminalVisible = true;
+    }
+  }
+  
   if (isUploading) {
-    appendTerminalOutput('⏳ Upload already in progress...');
+    appendTerminalOutput('[INFO] Upload already in progress...');
     return;
   }
   isUploading = true;
@@ -577,7 +605,7 @@ async function uploadCode() {
   setCurrentLanguage(language);
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to upload. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to upload. Please generate some code first.');
     isUploading = false;
     if (uploadBtn) uploadBtn.disabled = false;
     if (runBtn) runBtn.disabled = false;
@@ -595,12 +623,12 @@ async function uploadCode() {
         if (editorWindow && editorWindow.setEditorValue) {
           editorWindow.setEditorValue(code);
         }
-        appendTerminalOutput('🧹 Code auto-fixed and formatted successfully.');
+        appendTerminalOutput('[SUCCESS] Code formatted successfully.');
       } else if (fmt && !fmt.success) {
-        appendTerminalOutput(`⚠️ Formatter not applied: ${fmt.error || 'unknown error'}`);
+        appendTerminalOutput(`[WARNING] Formatter not applied: ${fmt.error || 'unknown error'}`);
       }
     } catch (fmtErr) {
-      appendTerminalOutput(`⚠️ Formatter error: ${fmtErr.message}`);
+      appendTerminalOutput(`[WARNING] Formatter error: ${fmtErr.message}`);
     }
   }
   
@@ -609,8 +637,8 @@ async function uploadCode() {
     const needsHardware = needsHardwarePort(code);
     
     if (needsHardware && !currentPort) {
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This code uses hardware-specific modules and needs to be uploaded to hardware.');
+      appendTerminalOutput('[ERROR] No port selected. Please select a port first.');
+      appendTerminalOutput('[INFO] This code requires hardware connection.');
       isUploading = false;
       if (uploadBtn) uploadBtn.disabled = false;
       if (runBtn) runBtn.disabled = false;
@@ -618,7 +646,7 @@ async function uploadCode() {
     }
     
     if (!needsHardware) {
-      appendTerminalOutput('💡 This is standard Python code. Use "Run" instead of "Upload" to execute locally.');
+      appendTerminalOutput('[INFO] This is standard Python code. Use "Run" to execute locally.');
       isUploading = false;
       if (uploadBtn) uploadBtn.disabled = false;
       if (runBtn) runBtn.disabled = false;
@@ -628,8 +656,8 @@ async function uploadCode() {
     const needsHardware = needsHardwarePortCpp(code);
     
     if (needsHardware && !currentPort) {
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32) and needs to be uploaded to hardware.');
+      appendTerminalOutput('[ERROR] No port selected. Please select a port first.');
+      appendTerminalOutput('[INFO] This C++ code requires hardware connection.');
       isUploading = false;
       if (uploadBtn) uploadBtn.disabled = false;
       if (runBtn) runBtn.disabled = false;
@@ -637,7 +665,7 @@ async function uploadCode() {
     }
     
     if (!needsHardware) {
-      appendTerminalOutput('💡 This is standard C++ code. Use "Run" instead of "Upload" to execute locally.');
+      appendTerminalOutput('[INFO] This is standard C++ code. Use "Run" to execute locally.');
       isUploading = false;
       if (uploadBtn) uploadBtn.disabled = false;
       if (runBtn) runBtn.disabled = false;
@@ -654,7 +682,7 @@ async function uploadCode() {
   
   // CRITICAL: Close serial monitor before upload (mpremote needs exclusive port access)
   if (currentPort && language === 'python') {
-    appendTerminalOutput(`🔄 Closing serial monitor to free COM port for upload...`);
+    appendTerminalOutput(`[INFO] Closing serial monitor for upload...`);
     try {
       await window.electronAPI.closeSerialPort();
       await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay
@@ -663,25 +691,25 @@ async function uploadCode() {
     }
   }
   
-  appendTerminalOutput(`📤 Uploading ${language} code to ${currentPort}...`);
+  appendTerminalOutput(`\n[UPLOAD] Uploading ${language} code to ${currentPort} (${currentBoardType || 'unknown'})...`);
   
   try {
     let result;
     switch (language) {
       case 'python':
-        result = await window.electronAPI.uploadPython(code, currentPort);
+        result = await window.electronAPI.uploadPython(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'javascript':
-        result = await window.electronAPI.uploadJavaScript(code, currentPort);
+        result = await window.electronAPI.uploadJavaScript(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'cpp':
-        result = await window.electronAPI.uploadCpp(code, currentPort);
+        result = await window.electronAPI.uploadCpp(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'c':
-        result = await window.electronAPI.uploadC(code, currentPort);
+        result = await window.electronAPI.uploadC(code, currentPort, currentBoardType || 'unknown');
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language for upload: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language for upload: ${language}`);
         isUploading = false;
         if (uploadBtn) uploadBtn.disabled = false;
         if (runBtn) runBtn.disabled = false;
@@ -691,13 +719,13 @@ async function uploadCode() {
     console.log('🔍 [UPLOAD RESULT]', result); // DEBUG
     
     if (result && result.success) {
-      appendTerminalOutput(`✅ Upload successful!`);
+      appendTerminalOutput(`\n[SUCCESS] Upload successful!\n`);
       appendTerminalOutput(result.output || 'No output');
       
       // Open serial monitor after successful upload (for Python/ESP32)
       if (language === 'python' && currentPort) {
         console.log('🔍 [SERIAL MONITOR] Attempting to reopen serial monitor...');
-        appendTerminalOutput(`🔄 Opening serial monitor (waiting for ESP32 to boot)...`);
+        appendTerminalOutput(`[INFO] Opening serial monitor...`);
         await new Promise(resolve => setTimeout(resolve, 1500)); // wait for board to boot
         
         try {
@@ -711,25 +739,25 @@ async function uploadCode() {
           try {
             await window.electronAPI.sendSerialData(currentPort, '\x04'); // Ctrl+D = soft reset
             console.log('🔍 [SERIAL MONITOR] Soft reset sent, main.py should start executing');
-            appendTerminalOutput(`🔄 Triggering code execution on ESP32...`);
+            appendTerminalOutput(`[INFO] Executing code on ESP32...`);
           } catch (ctrlDErr) {
             console.warn('⚠️ [SERIAL MONITOR] Failed to send Ctrl+D:', ctrlDErr);
           }
           
-          appendTerminalOutput(`📊 Waiting for ESP32 output... (if nothing appears, press the physical RESET button)`);
+          appendTerminalOutput(`[INFO] Waiting for output... (press RESET button if nothing appears)\n`);
         } catch (monitorErr) {
           console.error('❌ [SERIAL MONITOR] Error opening:', monitorErr);
-          appendTerminalOutput(`⚠️ Error opening serial monitor: ${monitorErr.message}`);
-          appendTerminalOutput(`💡 Try pressing the physical RESET button on your ESP32 board`);
+          appendTerminalOutput(`[WARNING] Error opening serial monitor: ${monitorErr.message}`);
+          appendTerminalOutput(`[INFO] Try pressing the RESET button on your ESP32`);
         }
       }
     } else {
       console.log('❌ [UPLOAD RESULT] Upload failed:', result);
-      appendTerminalOutput(`❌ Upload failed:`);
+      appendTerminalOutput(`[ERROR] Upload failed:`);
       appendTerminalOutput(result ? (result.error || 'Unknown error') : 'No result returned');
     }
   } catch (error) {
-    appendTerminalOutput(`❌ Upload error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Upload error: ${error.message}`);
   }
   finally {
     isUploading = false;
@@ -740,7 +768,7 @@ async function uploadCode() {
 
 async function runCode() {
   if (isRunning) {
-    appendTerminalOutput('⏳ A run is already in progress...');
+    appendTerminalOutput('[INFO] A run is already in progress...');
     return;
   }
   isRunning = true;
@@ -757,7 +785,7 @@ async function runCode() {
   console.log(`🎯 Running code in language: ${language}, currentPort: ${currentPort}`);
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to run. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to run. Please generate some code first.');
     return;
   }
   
@@ -768,7 +796,7 @@ async function runCode() {
     if (needsHardware && !currentPort) {
       console.log('❌ Port validation failed: Python code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This code uses hardware-specific modules (machine, os.uname, etc.)');
+      appendTerminalOutput('[INFO] This code requires hardware connection');
       return;
     }
     
@@ -785,7 +813,7 @@ async function runCode() {
     if (needsHardware && !currentPort) {
       console.log('❌ Port validation failed: C++ code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32)');
+      appendTerminalOutput('[INFO] This C++ code requires hardware connection');
       return;
     }
     
@@ -798,7 +826,7 @@ async function runCode() {
     }
   }
   
-  appendTerminalOutput(`▶️ Running ${language} code...`);
+  appendTerminalOutput(`\n[RUN] Executing ${language} code...`);
   
   try {
     let result;
@@ -825,14 +853,14 @@ async function runCode() {
         result = await window.electronAPI.runC(code);
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language for running: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language for running: ${language}`);
         return;
     }
     
     appendTerminalOutput(`📋 Execution output:`);
     appendTerminalOutput(result);
   } catch (error) {
-    appendTerminalOutput(`❌ Execution error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Execution error: ${error.message}`);
   }
   finally {
     isRunning = false;
@@ -910,20 +938,26 @@ async function refreshPorts() {
     ports.forEach(port => {
       const option = document.createElement('option');
       option.value = port.path;
+      // Store board type in data attribute
+      option.setAttribute('data-board-type', port.boardType || 'unknown');
       // Enhanced display format: COM3 (ESP32 - Silicon Labs)
+      const boardLabel = port.boardType ? ` [${port.boardType.toUpperCase()}]` : '';
       const displayName = port.manufacturer 
-        ? `${port.path} (${port.manufacturer})`
+        ? `${port.path}${boardLabel} (${port.manufacturer})`
         : port.friendlyName 
-        ? `${port.path} (${port.friendlyName})`
-        : `${port.path}`;
+        ? `${port.path}${boardLabel} (${port.friendlyName})`
+        : `${port.path}${boardLabel}`;
       option.text = displayName;
       portSelect.appendChild(option);
-      console.log(`  - ${port.path} (${port.manufacturer || port.friendlyName || 'Unknown'})`);
+      console.log(`  - ${port.path} (Board: ${port.boardType || 'unknown'}, ${port.manufacturer || port.friendlyName || 'Unknown'})`);
     });
     
     // Restore previous selection if it still exists
     if (currentSelection && ports.some(p => p.path === currentSelection)) {
       portSelect.value = currentSelection;
+      // Also restore board type
+      const selectedOption = portSelect.options[portSelect.selectedIndex];
+      currentBoardType = selectedOption.getAttribute('data-board-type') || 'unknown';
     }
   }
 }
@@ -942,14 +976,14 @@ async function openSerialMonitor(portPath, silent = false) {
   
   if (result && result.success) {
     if (!silent) {
-      appendTerminalOutput(`✅ Serial monitor opened on ${portPath} at ${ESP32_BAUD_RATE} baud`);
-      appendTerminalOutput(`📡 Listening for ESP32 output...`);
+      appendTerminalOutput(`[SUCCESS] Serial monitor opened on ${portPath} at ${ESP32_BAUD_RATE} baud`);
+      appendTerminalOutput(`[INFO] Listening for output...\n`);
     }
   } else {
     const errorMsg = result ? (result.error || 'Unknown error') : 'No result';
     console.error(`❌ [SERIAL MONITOR] Failed:`, errorMsg);
     if (!silent) {
-      appendTerminalOutput(`❌ Failed to open serial monitor on ${portPath}: ${errorMsg}`);
+      appendTerminalOutput(`[ERROR] Failed to open serial monitor on ${portPath}: ${errorMsg}`);
     }
   }
 }
@@ -965,13 +999,19 @@ async function selectPort(portPath, silent = false) {
   }
   console.log(`🔌 Attempting to select port: ${portPath}`);
   currentPort = portPath;
+  
+  // Get board type from the selected option
   const portSelect = document.getElementById('portSelect');
   if (portSelect) {
     portSelect.value = portPath;
+    const selectedOption = portSelect.options[portSelect.selectedIndex];
+    currentBoardType = selectedOption.getAttribute('data-board-type') || 'unknown';
+    console.log(`🔍 Board type detected: ${currentBoardType}`);
   }
+  
   if (!silent) {
-    appendTerminalOutput(`✅ Port selected: ${portPath}`);
-    appendTerminalOutput(`ℹ️ Serial monitor will open after upload completes.`);
+    appendTerminalOutput(`\n[INFO] Port selected: ${portPath} (${currentBoardType})`);
+    appendTerminalOutput(`[INFO] Serial monitor will open after upload completes.\n`);
   }
 }
 
@@ -998,17 +1038,17 @@ async function sendSerialData(data) {
   try {
     // Send data via serial port
     // Note: This requires a new IPC handler in main.js
-    appendTerminalOutput(`📤 Sending: ${data}`);
+    appendTerminalOutput(`[SEND] ${data}`);
     // The actual sending will be handled by the main process
     // For now, we'll use mpremote to send data
     const result = await window.electronAPI.sendSerialData(currentPort, data);
     if (result && result.success) {
-      appendTerminalOutput('✅ Data sent successfully');
+      appendTerminalOutput('[SUCCESS] Data sent successfully');
     } else {
-      appendTerminalOutput(`❌ Failed to send data: ${result?.error || 'Unknown error'}`);
+      appendTerminalOutput(`[ERROR] Failed to send data: ${result?.error || 'Unknown error'}`);
     }
   } catch (error) {
-    appendTerminalOutput(`❌ Error sending serial data: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Error sending serial data: ${error.message}`);
   }
 }
 
@@ -1042,10 +1082,10 @@ window.electronAPI.onTerminalOutput((data) => {
 });
 
 window.electronAPI.onReopenPort(async (port) => {
-  appendTerminalOutput(`🔄 Reconnecting to ${port}...`);
+  appendTerminalOutput(`[INFO] Reconnecting to ${port}...`);
   await new Promise(resolve => setTimeout(resolve, 1500));
   await selectPort(port, true);
-  appendTerminalOutput(`✅ Reconnected to ${port}`);
+  appendTerminalOutput(`[SUCCESS] Reconnected to ${port}`);
 });
 
 // Port selection change handler
@@ -1110,18 +1150,18 @@ function setupEsp32ConnectionTest() {
         return;
       }
       
-      appendTerminalOutput(`🔍 Testing ESP32 connection on ${currentPort}...`);
+      appendTerminalOutput(`[INFO] Testing ESP32 connection on ${currentPort}...`);
       
       try {
         const result = await window.electronAPI.testEsp32Connection(currentPort);
         if (result.success) {
-          appendTerminalOutput('✅ ESP32 connection test successful!');
+          appendTerminalOutput('[SUCCESS] ESP32 connection test successful!');
           appendTerminalOutput(result.output || 'No output');
         } else {
-          appendTerminalOutput(`❌ ESP32 connection test failed: ${result.error}`);
+          appendTerminalOutput(`[ERROR] ESP32 connection test failed: ${result.error}`);
         }
       } catch (error) {
-        appendTerminalOutput(`❌ ESP32 connection test error: ${error.message}`);
+        appendTerminalOutput(`[ERROR] ESP32 connection test error: ${error.message}`);
       }
     });
   }
@@ -1175,7 +1215,7 @@ async function saveCode() {
     // Wait for Monaco editor to be ready
     const editorWindow = document.getElementById('monacoEditor').contentWindow;
     if (!editorWindow) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
 
@@ -1187,7 +1227,7 @@ async function saveCode() {
     }
 
     if (!editorWindow.getEditorValue) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
 
@@ -1195,7 +1235,7 @@ async function saveCode() {
     const language = getCurrentLanguage();
     
     if (!code || code.trim() === '') {
-      appendTerminalOutput('❌ No code to save. Please generate some code first.');
+      appendTerminalOutput('[ERROR] No code to save. Please generate some code first.');
       return;
     }
     
@@ -1203,28 +1243,28 @@ async function saveCode() {
     const result = await window.electronAPI.saveCode(code, language);
     
     if (result.success) {
-      appendTerminalOutput(`✅ Code saved successfully!`);
+      appendTerminalOutput(`[SUCCESS] Code saved successfully!`);
     } else {
-      appendTerminalOutput(`❌ Failed to save code: ${result.error}`);
+      appendTerminalOutput(`[ERROR] Failed to save code: ${result.error}`);
     }
   } catch (error) {
     console.error('Error saving code:', error);
-    appendTerminalOutput(`❌ Error saving code: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Error saving code: ${error.message}`);
   }
 }
 
 // Load Code Function
 async function loadCode() {
   try {
-    appendTerminalOutput('⏳ Checking if editor is ready...');
+    appendTerminalOutput('[INFO] Checking if editor is ready...');
     
     // Wait for Monaco editor to be ready
     if (!await waitForEditor()) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
     
-    appendTerminalOutput('✅ Editor is ready');
+    appendTerminalOutput('[SUCCESS] Editor is ready');
     
     const editorWindow = document.getElementById('monacoEditor').contentWindow;
     const language = getCurrentLanguage();
@@ -1239,18 +1279,18 @@ async function loadCode() {
         if (editorWindow.setEditorLanguage) {
           editorWindow.setEditorLanguage(result.language || language);
         }
-        appendTerminalOutput(`✅ Code loaded successfully from: ${result.filePath}`);
+        appendTerminalOutput(`[SUCCESS] Code loaded from: ${result.filePath}`);
         // Update the current language
         setCurrentLanguage(result.language || language);
       } else {
-        appendTerminalOutput(`⚠️ Editor not ready. Please try again.`);
+        appendTerminalOutput(`[WARNING] Editor not ready. Please try again.`);
       }
     } else {
-      appendTerminalOutput(`❌ Failed to load code: ${result.error}`);
+      appendTerminalOutput(`[ERROR] Failed to load code: ${result.error}`);
     }
   } catch (error) {
     console.error('Error loading code:', error);
-    appendTerminalOutput(`❌ Error loading code: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Error loading code: ${error.message}`);
   }
 }
 
@@ -1271,14 +1311,14 @@ window.debugEditor = function() {
     console.log('Editor methods:', Object.getOwnPropertyNames(editorWindow));
   }
   
-  appendTerminalOutput('🔍 Editor debug info logged to console');
+  appendTerminalOutput('[INFO] Editor debug info logged to console');
 };
 
 // Listen for editor ready signal from Monaco iframe
 window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'editorReady') {
     console.log('✅ Monaco editor signaled ready');
-    appendTerminalOutput('✅ Monaco editor is ready');
+    appendTerminalOutput('[SUCCESS] Monaco editor is ready');
   }
 });
 
