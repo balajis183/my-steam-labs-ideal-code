@@ -334,7 +334,6 @@ function scrollTextOnOLED(text, direction, speed) {
   // This would create scrolling animation on OLED
 }
 
-// JavaScript generators are now defined in separate files
 
 // Extra blocks used by toolbox
 Blockly.Blocks['time_delay'] = {
@@ -346,7 +345,6 @@ Blockly.Blocks['time_delay'] = {
     this.setColour(195);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_if'] = {
   init: function() {
@@ -357,7 +355,6 @@ Blockly.Blocks['enhanced_if'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_compare'] = {
   init: function() {
@@ -369,7 +366,6 @@ Blockly.Blocks['enhanced_compare'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_logic'] = {
   init: function() {
@@ -381,7 +377,6 @@ Blockly.Blocks['enhanced_logic'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 // Simple OLED show block used by toolbox
 Blockly.Blocks['oled_show'] = {
@@ -413,13 +408,7 @@ Blockly.Blocks['oled_show_color'] = {
     this.setHelpUrl('');
   }
 };
-// JavaScript generator moved to separate file
 
-
-
-// -----------------------------
-// Extra blocks needed by toolbox
-// -----------------------------
 
 // My Program container block
 if (!Blockly.Blocks['my_program']) {
@@ -484,16 +473,33 @@ if (!Blockly.Blocks['bluetooth_send']) {
 
 if (!Blockly.Blocks['bluetooth_available']) {
   Blockly.Blocks['bluetooth_available'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth data available?'); this.setOutput(true,'Boolean'); this.setColour(290);} };
-  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_read']) {
   Blockly.Blocks['bluetooth_read'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth read string'); this.setOutput(true,'String'); this.setColour(290);} };
 }
 
-// ========================================
-// NEW MISSING BLOCKS ACCORDING TO DOCUMENT
-// ========================================
+if (!Blockly.Blocks['bluetooth_is_connected']) {
+  Blockly.Blocks['bluetooth_is_connected'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Bluetooth is connected?');
+      this.setOutput(true, 'Boolean');
+      this.setColour(290);
+      this.setTooltip('Check if Bluetooth device is connected');
+    }
+  };
+}
+
+if (!Blockly.Blocks['bluetooth_get_status']) {
+  Blockly.Blocks['bluetooth_get_status'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Bluetooth connection status');
+      this.setOutput(true, 'String');
+      this.setColour(290);
+      this.setTooltip('Get Bluetooth connection status (Connected/Disconnected)');
+    }
+  };
+}
 
 // 1. PIN MODE CONFIGURATION
 if (!Blockly.Blocks['pin_mode']) {

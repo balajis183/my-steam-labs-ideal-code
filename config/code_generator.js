@@ -58,7 +58,9 @@ const LIBRARY_MAPPING = {
     bluetooth_setup: ["ubluetooth"],
     bluetooth_send: ["ubluetooth"],
     bluetooth_available: ["ubluetooth"],
-    bluetooth_read: ["ubluetooth"]
+    bluetooth_read: ["ubluetooth"],
+    bluetooth_is_connected: ["ubluetooth"],
+    bluetooth_get_status: ["ubluetooth"]
   },
   library_imports: {
     machine: "from machine import Pin, PWM, ADC, SoftI2C",
@@ -381,6 +383,198 @@ def read_joystick2():
 def show_on_oled(text, x, y, color='white'):
     oled.text(str(text), x, y)
     oled.show()
+`);
+  }
+  
+  // Bluetooth BLE functions
+  if (usedBlocks.some(b => b.startsWith("bluetooth_"))) {
+    functions.push(`
+# Bluetooth BLE Global Variables
+ble = None
+ble_connected = False
+ble_device_name = ""
+ble_rx_buffer = []
+ble_conn_handle = None
+ble_rx_characteristic = None
+ble_tx_characteristic = None
+
+def _restart_advertising():
+    """Helper function to safely restart advertising"""
+    global ble, ble_device_name, ble_rx_characteristic, ble_tx_characteristic
+    import ubluetooth
+    import time
+    
+    try:
+        # Stop advertising
+        ble.gap_advertise(None)
+        time.sleep_ms(150)
+        
+        # Restart advertising
+        advertise_name = ble_device_name.encode()
+        adv_data = bytearray(b'\\x02\\x01\\x06') + bytearray((len(advertise_name) + 1, 0x09)) + advertise_name
+        ble.gap_advertise(100000, adv_data)
+        return True
+    except Exception as e:
+        print(f"Restart advertising error: {e}")
+        return False
+
+def bluetooth_setup(name):
+    """Initialize BLE peripheral with device name"""
+    global ble, ble_device_name, ble_rx_characteristic, ble_tx_characteristic
+    import ubluetooth
+    from micropython import const
+    import time
+    
+    try:
+        ble_device_name = name
+        
+        # Initialize BLE
+        if ble is not None:
+            try:
+                ble.active(False)
+                time.sleep_ms(100)
+            except:
+                pass
+        
+        ble = ubluetooth.BLE()
+        ble.active(True)
+        time.sleep_ms(100)  # Give BLE time to initialize
+        
+        # Define UART service UUID (Nordic UART Service)
+        _UART_UUID = ubluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+        _UART_TX = ubluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+        _UART_RX = ubluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+        
+        # Register UART service
+        UART_SERVICE = (_UART_UUID, ((_UART_TX, ubluetooth.FLAG_NOTIFY), (_UART_RX, ubluetooth.FLAG_WRITE),))
+        services = (UART_SERVICE,)
+        ((ble_tx_characteristic, ble_rx_characteristic),) = ble.gatts_register_services(services)
+        
+        # Set BLE event handler
+        ble.irq(ble_irq_handler)
+        
+        # Configure connection parameters (to avoid Error 19)
+        # These are more compatible parameters
+        try:
+            ble.config(gap_name=name)
+        except:
+            pass
+        
+        # Start advertising with proper format
+        advertise_name = name.encode()
+        # Advertising data: Flags + Complete Local Name
+        adv_data = bytearray(b'\\x02\\x01\\x06') + bytearray((len(advertise_name) + 1, 0x09)) + advertise_name
+        # Start advertising (interval in units of 0.625ms, so 100000 = 62.5 seconds)
+        ble.gap_advertise(100000, adv_data)
+        
+        print(f"Bluetooth: Started as '{name}'")
+        print("Bluetooth: Waiting for connection...")
+        
+    except Exception as e:
+        print(f"Bluetooth Setup Error: {e}")
+        # Try to recover
+        try:
+            ble.active(False)
+            time.sleep_ms(200)
+            ble.active(True)
+            print("Bluetooth: Recovered from error")
+        except:
+            print("Bluetooth: Setup failed, please restart ESP32")
+
+def ble_irq_handler(event, data):
+    """Handle BLE events with proper error handling"""
+    global ble_connected, ble_conn_handle, ble_rx_buffer, ble, ble_device_name
+    import ubluetooth
+    import time
+    
+    try:
+        if event == 1:  # _IRQ_CENTRAL_CONNECT
+            ble_conn_handle, _, _ = data
+            ble_connected = True
+            print("Bluetooth: Device connected!")
+            
+        elif event == 2:  # _IRQ_CENTRAL_DISCONNECT
+            ble_conn_handle, _, _ = data
+            ble_connected = False
+            ble_conn_handle = None
+            print("Bluetooth: Device disconnected!")
+            # Restart advertising with proper error handling
+            if not _restart_advertising():
+                # If restart failed, try full reinit
+                try:
+                    print("Bluetooth: Attempting full reinit...")
+                    ble.active(False)
+                    time.sleep_ms(200)
+                    ble.active(True)
+                    time.sleep_ms(100)
+                    # Re-register services
+                    _UART_UUID = ubluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
+                    _UART_TX = ubluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
+                    _UART_RX = ubluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+                    UART_SERVICE = (_UART_UUID, ((_UART_TX, ubluetooth.FLAG_NOTIFY), (_UART_RX, ubluetooth.FLAG_WRITE),))
+                    services = (UART_SERVICE,)
+                    ((ble_tx_characteristic, ble_rx_characteristic),) = ble.gatts_register_services(services)
+                    ble.irq(ble_irq_handler)
+                    _restart_advertising()
+                    print("Bluetooth: Reinitialized successfully")
+                except Exception as e2:
+                    print(f"Bluetooth: Reinit error: {e2}")
+        
+        elif event == 3:  # _IRQ_GATTS_WRITE
+            conn_handle, attr_handle = data
+            try:
+                value = ble.gatts_read(attr_handle)
+                received = value.decode('utf-8').strip()
+                if received:
+                    ble_rx_buffer.append(received)
+                    print(f"BLE RX: {received}")
+            except Exception as e:
+                print(f"BLE RX Error: {e}")
+        
+        elif event == 4:  # _IRQ_GATTS_READ_REQUEST
+            # Handle read requests
+            pass
+        
+        elif event == 28:  # _IRQ_CONNECTION_UPDATE
+            # Connection parameters updated (ignore errors, they're common)
+            pass
+            
+    except Exception as e:
+        print(f"BLE IRQ Handler Error: {e}")
+
+def bluetooth_send(data):
+    """Send data over BLE"""
+    global ble, ble_connected, ble_conn_handle, ble_tx_characteristic
+    if ble_connected and ble_conn_handle is not None:
+        try:
+            message = str(data).encode('utf-8')
+            ble.gatts_notify(ble_conn_handle, ble_tx_characteristic, message)
+            print(f"BLE TX: {data}")
+        except Exception as e:
+            print(f"BLE Send Error: {e}")
+    else:
+        print("BLE: Not connected, cannot send")
+
+def bluetooth_available():
+    """Check if data is available to read"""
+    return len(ble_rx_buffer) > 0
+
+def bluetooth_read():
+    """Read received data from buffer"""
+    if len(ble_rx_buffer) > 0:
+        return ble_rx_buffer.pop(0)
+    return ""
+
+def bluetooth_is_connected():
+    """Check if BLE device is connected"""
+    return ble_connected
+
+def bluetooth_get_status():
+    """Get connection status as string"""
+    if ble_connected:
+        return "Connected"
+    else:
+        return "Disconnected"
 `);
   }
   

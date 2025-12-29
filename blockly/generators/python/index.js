@@ -356,6 +356,14 @@ Blockly.Python['bluetooth_read'] = function() {
   return ['bluetooth_read()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
+Blockly.Python['bluetooth_is_connected'] = function() {
+  return ['bluetooth_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['bluetooth_get_status'] = function() {
+  return ['bluetooth_get_status()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
 // Text blocks
 Blockly.Python['text'] = function(block) {
   const text = block.getFieldValue('TEXT');

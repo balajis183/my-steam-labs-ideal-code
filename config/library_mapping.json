@@ -31,7 +31,9 @@
     "bluetooth_setup": ["ubluetooth"],
     "bluetooth_send": ["ubluetooth"],
     "bluetooth_available": ["ubluetooth"],
-    "bluetooth_read": ["ubluetooth"]
+    "bluetooth_read": ["ubluetooth"],
+    "bluetooth_is_connected": ["ubluetooth"],
+    "bluetooth_get_status": ["ubluetooth"]
   },
   "library_imports": {
     "machine": "from machine import Pin, PWM, ADC, SoftI2C",
