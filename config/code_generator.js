@@ -55,6 +55,9 @@ const LIBRARY_MAPPING = {
     wifi_connect: ["network"],
     wifi_send: ["network", "socket"],
     wifi_receive: ["network", "socket"],
+    wifi_is_connected: ["network"],
+    wifi_get_ip: ["network"],
+    wifi_disconnect: ["network"],
     bluetooth_setup: ["ubluetooth"],
     bluetooth_send: ["ubluetooth"],
     bluetooth_available: ["ubluetooth"],
@@ -383,6 +386,167 @@ def read_joystick2():
 def show_on_oled(text, x, y, color='white'):
     oled.text(str(text), x, y)
     oled.show()
+`);
+  }
+  
+  // WiFi functions
+  if (usedBlocks.some(b => b.startsWith("wifi_"))) {
+    functions.push(`
+# WiFi Global Variables
+wifi_sta = None
+wifi_connected = False
+wifi_ssid = ""
+wifi_socket = None
+
+def wifi_connect(ssid, password):
+    """Connect to WiFi network"""
+    global wifi_sta, wifi_connected, wifi_ssid
+    import network
+    import time
+    
+    try:
+        wifi_ssid = ssid
+        wifi_sta = network.WLAN(network.STA_IF)
+        wifi_sta.active(True)
+        
+        # Disconnect if already connected
+        if wifi_sta.isconnected():
+            wifi_sta.disconnect()
+            time.sleep(1)
+        
+        print(f"WiFi: Connecting to '{ssid}'...")
+        wifi_sta.connect(ssid, password)
+        
+        # Wait for connection (timeout: 15 seconds)
+        timeout = 15
+        start_time = time.time()
+        while not wifi_sta.isconnected():
+            if time.time() - start_time > timeout:
+                print("WiFi: Connection timeout!")
+                wifi_connected = False
+                return False
+            time.sleep(0.5)
+            print(".", end="")
+        
+        print()
+        wifi_connected = True
+        config = wifi_sta.ifconfig()
+        print(f"WiFi: Connected successfully!")
+        print(f"WiFi: IP Address: {config[0]}")
+        print(f"WiFi: Subnet: {config[1]}")
+        print(f"WiFi: Gateway: {config[2]}")
+        print(f"WiFi: DNS: {config[3]}")
+        return True
+        
+    except Exception as e:
+        print(f"WiFi: Connection error: {e}")
+        wifi_connected = False
+        return False
+
+def wifi_send(data, ip, port):
+    """Send data over WiFi to specified IP and port"""
+    global wifi_connected, wifi_socket
+    import socket
+    import time
+    
+    if not wifi_connected:
+        print("WiFi: Not connected, cannot send")
+        return False
+    
+    try:
+        # Create socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        
+        # Connect to server
+        print(f"WiFi: Connecting to {ip}:{port}...")
+        sock.connect((ip, int(port)))
+        
+        # Send data
+        message = str(data).encode('utf-8')
+        sock.send(message)
+        print(f"WiFi TX: {data} -> {ip}:{port}")
+        
+        # Close socket
+        sock.close()
+        return True
+        
+    except Exception as e:
+        print(f"WiFi Send Error: {e}")
+        try:
+            sock.close()
+        except:
+            pass
+        return False
+
+def wifi_receive(port):
+    """Receive data over WiFi on specified port (basic server)"""
+    global wifi_connected
+    import socket
+    
+    if not wifi_connected:
+        print("WiFi: Not connected, cannot receive")
+        return ""
+    
+    try:
+        # Create socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(5)
+        
+        # Bind to port
+        sock.bind(('', int(port)))
+        sock.listen(1)
+        print(f"WiFi: Listening on port {port}...")
+        
+        # Accept connection
+        conn, addr = sock.accept()
+        print(f"WiFi: Connection from {addr}")
+        
+        # Receive data
+        data = conn.recv(1024)
+        received = data.decode('utf-8')
+        print(f"WiFi RX: {received}")
+        
+        # Close connection
+        conn.close()
+        sock.close()
+        
+        return received
+        
+    except Exception as e:
+        print(f"WiFi Receive Error: {e}")
+        try:
+            sock.close()
+        except:
+            pass
+        return ""
+
+def wifi_is_connected():
+    """Check if WiFi is connected"""
+    global wifi_sta, wifi_connected
+    if wifi_sta is not None:
+        wifi_connected = wifi_sta.isconnected()
+    return wifi_connected
+
+def wifi_get_ip():
+    """Get WiFi IP address"""
+    global wifi_sta, wifi_connected
+    if wifi_connected and wifi_sta is not None:
+        return wifi_sta.ifconfig()[0]
+    return "Not connected"
+
+def wifi_disconnect():
+    """Disconnect from WiFi"""
+    global wifi_sta, wifi_connected
+    try:
+        if wifi_sta is not None:
+            wifi_sta.disconnect()
+            wifi_sta.active(False)
+            wifi_connected = False
+            print("WiFi: Disconnected")
+    except Exception as e:
+        print(f"WiFi Disconnect Error: {e}")
 `);
   }
   

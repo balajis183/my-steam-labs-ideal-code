@@ -166,8 +166,12 @@ async function hardwareResetESP32(portPath) {
         p.set({ dtr: true, rts: false }, (err1) => {
           if (err1) {
             console.log(`⚠️ Reset step 1 failed: ${err1.message}`);
-            p.close(() => { try { p.destroy(); } catch {} });
-            return resolve(false);
+            p.close(() => { 
+              try { p.destroy(); } catch {} 
+              // Wait for Windows to release port
+              setTimeout(() => resolve(false), 300);
+            });
+            return;
           }
           
           setTimeout(() => {
@@ -175,8 +179,11 @@ async function hardwareResetESP32(portPath) {
             p.set({ dtr: false, rts: false }, (err2) => {
               if (err2) {
                 console.log(`⚠️ Reset step 2 failed: ${err2.message}`);
-                p.close(() => { try { p.destroy(); } catch {} });
-                return resolve(false);
+                p.close(() => { 
+                  try { p.destroy(); } catch {} 
+                  setTimeout(() => resolve(false), 300);
+                });
+                return;
               }
               
               setTimeout(() => {
@@ -190,7 +197,8 @@ async function hardwareResetESP32(portPath) {
                     p.close(() => {
                       try { p.destroy(); } catch {}
                       console.log('✅ Hardware reset complete (Arduino IDE style)');
-                      resolve(true);
+                      // Wait for Windows to release port before resolving
+                      setTimeout(() => resolve(true), 500);
                     });
                   }, 250);  // Wait for ESP32 to start booting
                 });
@@ -223,7 +231,8 @@ async function pokeRawRepl(portPath) {
           setTimeout(() => {
             p.close(() => {
               try { p.destroy(); } catch {}
-              resolve();
+              // Wait for Windows to release port before resolving
+              setTimeout(() => resolve(), 500);
             });
           }, 300); // Slightly longer delay
         });
@@ -367,12 +376,30 @@ async function releaseComPortIfNeeded(portPath) {
       }
     }
 
-    // Wait for OS to release the handle
+    // Wait for OS to release the handle - Windows needs more time
     safeSend('terminal-output', `[INFO] Waiting for port to be released...`);
-    await delay(800); // keep short; Windows usually frees in <1s if handle is destroyed
+    await delay(1500); // Increased from 800ms for Windows port release
     
-    console.log(`[SUCCESS] Port ${portPath} released successfully`);
-    safeSend('terminal-output', `[SUCCESS] Port ${portPath} released, ready for upload`);
+    // Verify port is actually available (Windows-specific check)
+    let attempts = 0;
+    const maxAttempts = 5;
+    while (attempts < maxAttempts) {
+      const available = await isPortAvailable(portPath);
+      if (available) {
+        console.log(`[SUCCESS] Port ${portPath} released successfully (verified)`);
+        safeSend('terminal-output', `[SUCCESS] Port ${portPath} released, ready for upload`);
+        return;
+      }
+      attempts++;
+      if (attempts < maxAttempts) {
+        console.log(`⚠️ Port still locked, waiting longer (attempt ${attempts}/${maxAttempts})...`);
+        await delay(500); // Wait 500ms between checks
+      }
+    }
+    
+    // If port still not available after retries, log warning but continue
+    console.log(`⚠️ Port ${portPath} may still be locked, but proceeding anyway...`);
+    safeSend('terminal-output', `[WARNING] Port ${portPath} may still be in use, but proceeding...`);
   } catch (error) {
       console.error(`[ERROR] Error releasing port ${portPath}:`, error.message);
     safeSend('terminal-output', `[WARNING] Port release had issues: ${error.message}`);
@@ -396,7 +423,8 @@ async function hardResetPort(portPath) {
               setTimeout(() => {
                 resetPort.close(() => {
                   try { resetPort.destroy(); } catch {}
-                  resolve();
+                  // Wait for Windows to release port before resolving
+                  setTimeout(() => resolve(), 500);
                 });
               }, 200);
             });
@@ -434,7 +462,8 @@ async function emergencyResetToBootloader(portPath) {
                     resetPort.close(() => {
                       try { resetPort.destroy(); } catch {}
                       console.log('✅ ESP32 should now be in bootloader mode');
-                      resolve();
+                      // Wait for Windows to release port before resolving
+                      setTimeout(() => resolve(), 500);
                     });
                   }, 300);
                 });
@@ -469,10 +498,33 @@ async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
             });
           });
           // Give OS time to release the port
-          await delay(1000);
+          await delay(1500);
         } catch (closeErr) {
           console.log(`Warning: Error closing port: ${closeErr.message}`);
         }
+      }
+      
+      // Verify port is available before mpremote tries to use it
+      console.log(`🔍 Verifying port ${portPath} is available before mpremote...`);
+      let portAvailable = false;
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts && !portAvailable) {
+        portAvailable = await isPortAvailable(portPath);
+        if (!portAvailable) {
+          attempts++;
+          if (attempts < maxAttempts) {
+            console.log(`⚠️ Port ${portPath} not available yet, waiting... (attempt ${attempts}/${maxAttempts})`);
+            await delay(500);
+          }
+        }
+      }
+      
+      if (!portAvailable) {
+        console.log(`⚠️ Port ${portPath} may still be locked, but proceeding with mpremote...`);
+      } else {
+        console.log(`✅ Port ${portPath} verified available`);
       }
       
       // Execute the mpremote command (mpremote handles serial communication itself)
@@ -981,7 +1033,7 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         
         // CRITICAL: Release port FIRST before any mpremote operations
         await releaseComPortIfNeeded(port);
-        await delay(800);
+        await delay(1000); // Increased delay after port release
         
         // Board-specific reset logic
         const isESP32 = boardType === 'esp32';
@@ -990,6 +1042,7 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
           // ESP32-specific aggressive hardware reset (like Arduino IDE)
           safeSend('terminal-output', '[INFO] Resetting ESP32 board...');
           const resetSuccess = await hardwareResetESP32(port);
+          // hardwareResetESP32 now includes delay for port release
           if (resetSuccess) {
             safeSend('terminal-output', '[SUCCESS] Board reset complete. Waiting for boot...');
             await delay(3000);  // Wait for ESP32 to fully boot MicroPython (longer delay!)
@@ -1001,13 +1054,15 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
           // For non-ESP32 boards, use gentler reset approach
           safeSend('terminal-output', `[INFO] Preparing ${boardType} board for upload...`);
           await hardResetPort(port);
-          await delay(1500);  // Shorter delay for non-ESP32 boards
+          // hardResetPort now includes delay for port release
+          await delay(1500);  // Additional delay for non-ESP32 boards
         }
         
         // Send interrupt signals to stop any running code
         safeSend('terminal-output', '[INFO] Stopping any running programs...');
         await pokeRawRepl(port);
-        await delay(800);  // Longer delay
+        // pokeRawRepl now includes delay for port release
+        await delay(800);  // Additional delay
         
         // CRITICAL FIX: Upload a BLANK main.py FIRST to stop old code from running
         // This is the key difference from Arduino IDE - we need to erase old code first
@@ -1025,9 +1080,11 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         if (!blankResult.success && (blankResult.error || '').includes('could not enter raw repl')) {
           safeSend('terminal-output', '⚠️ Retrying to clear old code (attempt 1/3)...');
           await hardResetPort(port);
-          await delay(1800);
+          // hardResetPort includes delay, but add extra for retry
+          await delay(1000);
           await pokeRawRepl(port);
-          await delay(500);
+          // pokeRawRepl includes delay, but add extra for retry
+          await delay(800);
           blankResult = await captureSerialOutput(port, blankCmd, 20000);
         }
         
@@ -1035,15 +1092,15 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         if (!blankResult.success) {
           if (isESP32) {
             safeSend('terminal-output', '⚠️ Retrying with ESP32 hardware reset (attempt 2/3)...');
-            await hardwareResetESP32(port);  // ESP32-specific hardware reset
-            await delay(2500);
+            await hardwareResetESP32(port);  // ESP32-specific hardware reset (includes delay)
+            await delay(2000); // Additional delay after reset
           } else {
             safeSend('terminal-output', '⚠️ Retrying with soft reset (attempt 2/3)...');
-            await hardResetPort(port);
-            await delay(1800);
+            await hardResetPort(port); // Includes delay
+            await delay(1000); // Additional delay
           }
-          await pokeRawRepl(port);
-          await delay(800);
+          await pokeRawRepl(port); // Includes delay
+          await delay(800); // Additional delay
           blankResult = await captureSerialOutput(port, blankCmd, 25000);
         }
         
@@ -1051,17 +1108,17 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         if (!blankResult.success) {
           if (isESP32) {
             safeSend('terminal-output', '🚨 ESP32 Emergency bootloader reset (attempt 3/3)...');
-            await emergencyResetToBootloader(port);
-            await delay(2500); // Bootloader needs more time
-            await hardwareResetESP32(port);  // Hardware reset after bootloader
-            await delay(2000);
+            await emergencyResetToBootloader(port); // Includes delay
+            await delay(2000); // Bootloader needs more time
+            await hardwareResetESP32(port);  // Hardware reset after bootloader (includes delay)
+            await delay(2000); // Additional delay
           } else {
             safeSend('terminal-output', '⚠️ Final retry attempt (3/3)...');
-            await hardResetPort(port);
-            await delay(2000);
+            await hardResetPort(port); // Includes delay
+            await delay(1500); // Additional delay
           }
-          await pokeRawRepl(port);
-          await delay(800);
+          await pokeRawRepl(port); // Includes delay
+          await delay(800); // Additional delay
           blankResult = await captureSerialOutput(port, blankCmd, 30000);
         }
         
@@ -1165,20 +1222,20 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         // First retry
         if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
           safeSend('terminal-output', '[WARNING] Connection lost, retrying (1/2)...');
-          await hardResetPort(port);
-          await delay(1800); // Even longer delay
-          await pokeRawRepl(port);
-          await delay(500);
+          await hardResetPort(port); // Includes delay
+          await delay(1000); // Additional delay
+          await pokeRawRepl(port); // Includes delay
+          await delay(800); // Additional delay
           fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
         }
         
         // Second retry
         if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
           safeSend('terminal-output', '[WARNING] Connection lost, retrying (2/2)...');
-          await hardResetPort(port);
-          await delay(2000); // Maximum delay
-          await pokeRawRepl(port);
-          await delay(500);
+          await hardResetPort(port); // Includes delay
+          await delay(1500); // Additional delay
+          await pokeRawRepl(port); // Includes delay
+          await delay(800); // Additional delay
           fsResult = await captureSerialOutput(port, fsCpCmd, 25000); // Longer timeout
         }
         if (!fsResult.success) {

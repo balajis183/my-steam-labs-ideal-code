@@ -640,6 +640,40 @@ if (!Blockly.Blocks['wifi_receive']) {
   };
 }
 
+if (!Blockly.Blocks['wifi_is_connected']) {
+  Blockly.Blocks['wifi_is_connected'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi is connected?');
+      this.setOutput(true, 'Boolean');
+      this.setColour(290);
+      this.setTooltip('Check if WiFi is connected');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_get_ip']) {
+  Blockly.Blocks['wifi_get_ip'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi get IP address');
+      this.setOutput(true, 'String');
+      this.setColour(290);
+      this.setTooltip('Get WiFi IP address');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_disconnect']) {
+  Blockly.Blocks['wifi_disconnect'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi disconnect');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Disconnect from WiFi network');
+    }
+  };
+}
+
 // 7. ENHANCED OLED DISPLAY BLOCKS
 if (!Blockly.Blocks['oled_display_variable']) {
   Blockly.Blocks['oled_display_variable'] = {

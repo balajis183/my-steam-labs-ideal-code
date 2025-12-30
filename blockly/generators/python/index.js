@@ -196,6 +196,18 @@ Blockly.Python['wifi_receive'] = function(block) {
   return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
+Blockly.Python['wifi_is_connected'] = function() {
+  return ['wifi_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['wifi_get_ip'] = function() {
+  return ['wifi_get_ip()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['wifi_disconnect'] = function() {
+  return 'wifi_disconnect()\n';
+};
+
 // Enhanced OLED display variable
 Blockly.Python['oled_display_variable'] = function(block) {
   var variable = Blockly.Python.valueToCode(block, 'VARIABLE', Blockly.Python.ORDER_ATOMIC) || '0';
@@ -465,6 +477,18 @@ Blockly.Python.forBlock['wifi_send'] = function(block, generator) {
 Blockly.Python.forBlock['wifi_receive'] = function(block, generator) {
   var port = block.getFieldValue('PORT');
   return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_is_connected'] = function(block, generator) {
+  return ['wifi_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_get_ip'] = function(block, generator) {
+  return ['wifi_get_ip()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_disconnect'] = function(block, generator) {
+  return 'wifi_disconnect()\n';
 };
 
 // Enhanced OLED display variable
