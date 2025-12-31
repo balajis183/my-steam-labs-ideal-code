@@ -460,14 +460,94 @@ window.clearTerminal = clearTerminal;
 window.saveBlocksXML = saveBlocksXML;
 window.loadBlocksXML = loadBlocksXML;
 
+// ==============================
+// CHATBOT INITIALIZATION
+// ==============================
+let chatbotEngine = null;
+let chatbotUI = null;
+
+function initializeChatbot() {
+  try {
+    // Check if IPC is available
+    if (!window.electronAPI || !window.electronAPI.chatbotGenerateCode) {
+      console.error("❌ Electron IPC not available");
+      return false;
+    }
+
+    // Initialize the ChatbotUI
+    const chatbot = new window.ChatbotUI();
+    chatbot.init("#chatbot-container");
+
+    console.log("✅ Chatbot initialized");
+    return true;
+  } catch (error) {
+    console.error("❌ Chatbot init error:", error);
+    return false;
+  }
+}
+
+// ==============================
+// TAB SWITCHING
+// ==============================
+function setupTabSwitching() {
+  const tabButtons = document.querySelectorAll('.code-tab-btn');
+  const tabContents = document.querySelectorAll('.code-tab-content');
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', (e) => {
+      const tabId = button.getAttribute('data-tab');
+
+      // Remove active class from all buttons and contents
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+
+      // Add active class to clicked button and corresponding content
+      button.classList.add('active');
+      const activeTab = document.getElementById(tabId);
+      if (activeTab) {
+        activeTab.classList.add('active');
+      }
+
+      // Trigger resize for Monaco editor when switching back to code editor
+      if (tabId === 'code-editor-tab') {
+        setTimeout(() => {
+          if (workspace) {
+            Blockly.svgResize(workspace);
+          }
+          const monacoFrame = document.getElementById('monacoEditor');
+          if (monacoFrame && monacoFrame.contentWindow) {
+            monacoFrame.contentWindow.dispatchEvent(new Event('resize'));
+          }
+        }, 100);
+      }
+
+      // Focus chatbot input when switching to chatbot tab
+      if (tabId === 'chatbot-tab' && chatbotUI) {
+        setTimeout(() => {
+          chatbotUI.focus();
+        }, 100);
+      }
+
+      console.log(`📑 Switched to tab: ${tabId}`);
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   setupTerminalResize();
+  setupTabSwitching();
+  
   // Setup real-time Python conversion after workspace is ready
   setTimeout(() => {
     if (workspace) {
       setupRealTimePythonConversion();
     }
   }, 500);
+
+  // Initialize chatbot
+  setTimeout(() => {
+    initializeChatbot();
+  }, 1000);
 });
 
 

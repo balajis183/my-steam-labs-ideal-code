@@ -195,6 +195,7 @@
     <script src="../scripts/hardware_adapter.js"></script>
     <link rel="stylesheet" href="../styles/style.css" />
     <link rel="stylesheet" href="../styles/index.css" />
+    <link rel="stylesheet" href="../styles/chatbot.css" />
   </head>
 
   <body>
@@ -219,8 +220,20 @@
       <!-- Main layout -->
       <div id="main">
         <div id="blocklyDiv"></div>
+        <!-- Code/Chatbot Tabbed Interface -->
         <div id="codeArea">
-          <iframe id="monacoEditor" src="./monaco.html"></iframe>
+          <div id="codeAreaTabs" class="code-area-tabs">
+            <button class="code-tab-btn active" data-tab="code-editor-tab">Code Editor</button>
+            <button class="code-tab-btn" data-tab="chatbot-tab">🤖 My STEAM Chatbot</button>
+          </div>
+          <div class="code-area-content">
+            <div id="code-editor-tab" class="code-tab-content active">
+              <iframe id="monacoEditor" src="./monaco.html"></iframe>
+            </div>
+            <div id="chatbot-tab" class="code-tab-content">
+              <div id="chatbot-container"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -364,6 +377,11 @@
     </xml>
 
     <script src="../scripts/blockly_page.js"></script>
+
+    <!-- Chatbot Scripts -->
+    <script src="../../config/chatbot.config.js"></script>
+    <script src="../scripts/chatbot.js"></script>
+    <script src="../scripts/chatbot-ui.js"></script>
 
     <script src="../scripts/renderer.js"></script>
   </body>

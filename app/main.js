@@ -1780,6 +1780,203 @@ ipcMain.handle('install-micropython', async (_e, port) => {
   }
 });
 
+
+// ---- Chatbot API Handler (Direct SambaNova Integration) ----
+// No Python subprocess needed - API calls directly from Electron
+
+ipcMain.handle('chatbot-generate-code', async (_e, question) => {
+  try {
+    const API_KEY = "9d06bc2c-7d40-42d4-9fac-8a1d3d3f9a54";
+    const API_URL = "https://api.sambanova.ai/v1/chat/completions";
+    const MODEL_NAME = "Llama-3.3-Swallow-70B-Instruct-v0.4";
+
+    // MY STEAM LABS - Exact Sensor Pin Mappings
+    const sensorPins = {
+      ldr: 34,
+      ir: 35,
+      temperature: 32,
+      temp: 32,
+      adc: 32,
+      ultrasonic_trig: 33,
+      ultrasonic_echo: 32,
+      touch: 12,
+      io12: 12,
+      oled_scl: 15,
+      scl: 15,
+      oled_sda: 13,
+      sda: 13,
+      motor_m1_a: 19,
+      motor_m1_b: 18,
+      motor_m2_a: 5,
+      motor_m2_b: 17,
+      motor_m3_a: 23,
+      motor_m3_b: 22,
+      motor_m4_a: 21,
+      motor_m4_b: 16,
+      joystick1_v: 4,
+      joystick1_h: 2,
+      joystick2_v: 26,
+      joystick2_h: 25
+    };
+
+    // Build system prompt with exact pin mappings
+    let systemPrompt = `You are an ESP32 MicroPython code generator for MY STEAM LABS.
+ONLY output executable Python code.
+No explanations, no markdown, no triple backticks.
+Use EXACT pins provided. Use only valid MicroPython libraries.
+
+MY STEAM LABS Pin Configuration:
+- LDR Sensor: GPIO34
+- IR Sensor: GPIO35
+- Temperature Sensor: GPIO32
+- Ultrasonic Trig: GPIO33
+- Ultrasonic Echo: GPIO32
+- Touch Sensor: GPIO12
+- OLED SCL: GPIO15, OLED SDA: GPIO13
+- Motor M1: GPIO19 (A), GPIO18 (B)
+- Motor M2: GPIO5 (A), GPIO17 (B)
+- Motor M3: GPIO23 (A), GPIO22 (B)
+- Motor M4: GPIO21 (A), GPIO16 (B)
+- Joystick1: V-axis GPIO4, H-axis GPIO2
+- Joystick2: V-axis GPIO26, H-axis GPIO25`;
+
+    // Add hardware context based on keywords
+    const q = question.toLowerCase();
+    
+    if (q.includes("temperature") || q.includes("temp") || q.includes("adc")) {
+      systemPrompt += `\n\nTemperature Sensor (GPIO32):
+from machine import ADC, Pin
+adc = ADC(Pin(32))
+adc.atten(ADC.ATTN_11DB)
+adc.width(ADC.WIDTH_12BIT)
+reading = adc.read()`;
+    }
+    if (q.includes("ldr") || q.includes("light")) {
+      systemPrompt += `\n\nLDR Sensor (GPIO34):
+from machine import ADC, Pin
+ldr = ADC(Pin(34))
+ldr.atten(ADC.ATTN_11DB)
+ldr.width(ADC.WIDTH_12BIT)
+light_value = ldr.read()`;
+    }
+    if (q.includes("ir") || q.includes("infrared")) {
+      systemPrompt += `\n\nIR Sensor (GPIO35):
+from machine import ADC, Pin
+ir = ADC(Pin(35))
+ir.atten(ADC.ATTN_11DB)
+ir.width(ADC.WIDTH_12BIT)
+ir_value = ir.read()`;
+    }
+    if (q.includes("touch") || q.includes("io12")) {
+      systemPrompt += `\n\nTouch Sensor (GPIO12):
+from machine import TouchPad, Pin
+touch = TouchPad(Pin(12))
+touch.config(threshold=300)
+if touch.read() < 300:
+    print("Touch detected")`;
+    }
+    if (q.includes("ultrasonic") || q.includes("distance")) {
+      systemPrompt += `\n\nUltrasonic Sensor (Trig GPIO33, Echo GPIO32):
+from machine import Pin, time_pulse_us
+import time
+trig = Pin(33, Pin.OUT)
+echo = Pin(32, Pin.IN)
+trig.off()
+time.sleep_us(2)
+trig.on()
+time.sleep_us(10)
+trig.off()
+pulse_time = time_pulse_us(echo, 1, 30000)
+distance = pulse_time / 58`;
+    }
+    if (q.includes("motor") || q.includes("pwm") || q.includes("m1") || q.includes("m2") || q.includes("m3") || q.includes("m4")) {
+      systemPrompt += `\n\nMotor Control (PWM):
+Motor M1: GPIO19 (A), GPIO18 (B)
+Motor M2: GPIO5 (A), GPIO17 (B)
+Motor M3: GPIO23 (A), GPIO22 (B)
+Motor M4: GPIO21 (A), GPIO16 (B)
+from machine import Pin, PWM
+m1_a = PWM(Pin(19), freq=1000)
+m1_b = PWM(Pin(18), freq=1000)
+m1_a.duty(512)
+m1_b.duty(0)`;
+    }
+    if (q.includes("joystick") || q.includes("joy")) {
+      systemPrompt += `\n\nJoystick Control:
+Joystick1: V-axis GPIO4, H-axis GPIO2
+Joystick2: V-axis GPIO26, H-axis GPIO25
+from machine import ADC, Pin
+joy1_v = ADC(Pin(4))
+joy1_h = ADC(Pin(2))
+v_value = joy1_v.read()
+h_value = joy1_h.read()`;
+    }
+    if (q.includes("oled") || q.includes("display")) {
+      systemPrompt += `\n\nOLED Display (SSD1306):
+SCL: GPIO15, SDA: GPIO13
+from machine import I2C, Pin
+import ssd1306
+i2c = I2C(0, scl=Pin(15), sda=Pin(13), freq=400000)
+oled = ssd1306.SSD1306_I2C(128, 64, i2c)
+oled.text("Hello World", 0, 0)
+oled.show()`;
+    }
+
+    const payload = {
+      model: MODEL_NAME,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: question }
+      ],
+      temperature: 0.1,
+      max_tokens: 800
+    };
+
+    console.log("🔥 Calling SambaNova API for:", question);
+    
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify(payload),
+      timeout: 60000
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("API Error:", text);
+      return { 
+        success: false, 
+        error: `API Error (${response.status}): ${text}`
+      };
+    }
+
+    const data = await response.json();
+    
+    if (!data.choices || !data.choices[0]) {
+      return { success: false, error: "Invalid API response structure" };
+    }
+
+    let code = data.choices[0].message.content.trim();
+    
+    // Remove markdown formatting if present
+    code = code.replace(/```python\n?/g, "").replace(/```\n?/g, "").trim();
+
+    console.log("✅ Code generated successfully");
+    return { success: true, code: code };
+
+  } catch (error) {
+    console.error("❌ Chatbot error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('chatbot-ping', async () => {
+  return { success: true, status: 'ready' };
+});
+
 // ---- Terminal Output Handler ----
 ipcMain.handle('terminal-output', async (_e, message) => {
   safeSend('terminal-output', message);

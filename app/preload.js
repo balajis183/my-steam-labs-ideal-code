@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Terminal Output
   terminalOutput: (message) => ipcRenderer.invoke('terminal-output', message),
   
+  // Chatbot API
+  chatbotGenerateCode: (question) => ipcRenderer.invoke('chatbot-generate-code', question),
+  chatbotPing: () => ipcRenderer.invoke('chatbot-ping'),
+  
   // Event Listeners
   onSerialData: (callback) => {
     const listener = (event, data) => callback(data);
