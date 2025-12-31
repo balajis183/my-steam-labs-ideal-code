@@ -24,15 +24,15 @@ class HCSR04:
         self.trigger.value(0)
 
         # Wait for echo to go high
-        pulse_start = time.ticks_us()
+        timeout_start = time.ticks_us()
         while self.echo.value() == 0:
-            if time.ticks_diff(time.ticks_us(), pulse_start) > self.echo_timeout_us:
+            if time.ticks_diff(time.ticks_us(), timeout_start) > self.echo_timeout_us:
                 return None
 
         # Measure how long echo stays high
-        pulse_end = time.ticks_us()
+        pulse_start = time.ticks_us()
         while self.echo.value() == 1:
-            if time.ticks_diff(time.ticks_us(), pulse_end) > self.echo_timeout_us:
+            if time.ticks_diff(time.ticks_us(), pulse_start) > self.echo_timeout_us:
                 return None
         pulse_end = time.ticks_us()
 
@@ -44,6 +44,6 @@ class HCSR04:
         if pulse_duration is None:
             return None
         # Speed of sound: 340 m/s => 0.034 cm/us. Divide by 2 for round trip.
-        return (pulse_duration * 0.0343) / 2
+        return (pulse_duration * 0.034) / 2
 
 

@@ -890,11 +890,10 @@ function autoFixPythonIndentation(code) {
 
 ipcMain.handle('format-python', async (_e, code) => {
   try {
-    // IMPORTANT: Auto-indentation DISABLED - it was breaking correct code!
-    // Blockly generates correct code, don't try to "fix" it
-    console.log('✅ Using code as-is (auto-indentation disabled)');
+    // STEP 1: Auto-fix Python indentation (handles complex student code)
+    console.log('🔧 Step 1: Auto-fixing Python indentation...');
     
-    let fixedCode = code;
+    let fixedCode = autoFixPythonIndentation(code);
     
     // STEP 2: Try black formatter for additional polish (optional)
     console.log('🔧 Step 2: Applying black formatter (if available)...');

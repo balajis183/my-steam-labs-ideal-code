@@ -313,34 +313,14 @@ def read_ir_analog():
   if (usedBlocks.includes("temp_sensor")) {
     functions.push(`
 def read_temperature():
-    """Read temperature from analog sensor"""
+    """Read temperature sensor ADC value"""
     try:
-        # Average multiple readings for stability
-        total = 0
-        samples = 10
-        for _ in range(samples):
-            total += temp_adc.read()
-            time.sleep(0.01)
-        
-        raw_value = total // samples
-        
-        if raw_value > 3800:
-            print("Temperature: Sensor not connected")
-            return 0.0
-        
-        # Convert to voltage and temperature
-        voltage = raw_value * (3.3 / 4095)
-        temperature = voltage * 100
-        
-        # Validate range
-        if temperature < 0 or temperature > 100:
-            temperature = (voltage - 0.5) * 100
-        
-        print("Temperature:", round(temperature), "°C")
-        return temperature
+        value = temp_adc.read()
+        print("Temperature Sensor Value:", value)
+        return value
     except Exception as e:
         print("Temperature error:", str(e))
-        return 0.0
+        return 0
 `);
   }
   
