@@ -156,8 +156,9 @@ Blockly.JavaScript['touch_sensor'] = function() {
   return ['readTouch()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; 
 };
 
-Blockly.JavaScript['color_sensor'] = function() { 
-  return ['readColor()', Blockly.JavaScript.ORDER_FUNCTION_CALL]; 
+Blockly.JavaScript['color_sensor'] = function(block) { 
+  const color = block.getFieldValue('COLOR') || 'red';
+  return [`readColor("${color}")`, Blockly.JavaScript.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.JavaScript['joystick1'] = function() { 

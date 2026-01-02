@@ -4,6 +4,95 @@ let isResizing = false;
 let startY = 0;
 let startHeight = 0;
 
+// Custom prompt function for Electron (Blockly v12 doesn't support browser prompt)
+// MUST be defined BEFORE Blockly loads
+function customPrompt(message, defaultValue) {
+  return new Promise((resolve) => {
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+    
+    // Create dialog box
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); min-width: 300px;';
+    
+    // Create message
+    const msg = document.createElement('div');
+    msg.textContent = message;
+    msg.style.cssText = 'margin-bottom: 15px; font-size: 14px;';
+    dialog.appendChild(msg);
+    
+    // Create input field
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = defaultValue || '';
+    input.style.cssText = 'width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; margin-bottom: 15px;';
+    dialog.appendChild(input);
+    
+    // Create buttons container
+    const buttons = document.createElement('div');
+    buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px;';
+    
+    // Create OK button
+    const okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'padding: 8px 16px; background: #5A59FF; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;';
+    okBtn.onclick = () => {
+      const value = input.value.trim();
+      document.body.removeChild(overlay);
+      resolve(value || null);
+    };
+    
+    // Create Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding: 8px 16px; background: #ccc; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;';
+    cancelBtn.onclick = () => {
+      document.body.removeChild(overlay);
+      resolve(null);
+    };
+    
+    buttons.appendChild(cancelBtn);
+    buttons.appendChild(okBtn);
+    dialog.appendChild(buttons);
+    overlay.appendChild(dialog);
+    
+    // Add to page
+    document.body.appendChild(overlay);
+    
+    // Focus input and handle Enter key
+    input.focus();
+    input.select();
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        okBtn.click();
+      } else if (e.key === 'Escape') {
+        cancelBtn.click();
+      }
+    };
+    
+    // Close on overlay click
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        cancelBtn.click();
+      }
+    };
+  });
+}
+
+// Override Blockly's prompt function IMMEDIATELY when Blockly is available
+if (typeof Blockly !== 'undefined') {
+  Blockly.prompt = customPrompt;
+} else {
+  // Wait for Blockly to load
+  const checkBlockly = setInterval(() => {
+    if (typeof Blockly !== 'undefined') {
+      Blockly.prompt = customPrompt;
+      clearInterval(checkBlockly);
+    }
+  }, 50);
+}
+
 function defineCustomBlocks() {}
 
 defineCustomBlocks();
@@ -28,9 +117,54 @@ workspace = Blockly.inject('blocklyDiv', {
 
 workspace.createVariable('i_count');
 
-workspace.registerButtonCallback('CREATE_VARIABLE', function(button) {
-  Blockly.Variables.createVariableButtonHandler(button.getTargetWorkspace());
-});
+// Fix Create Variable button callback - register after workspace is ready
+setTimeout(() => {
+  try {
+    workspace.registerButtonCallback('CREATE_VARIABLE', async function(button) {
+      try {
+        // Get the target workspace
+        let targetWorkspace = workspace;
+        if (button && typeof button.getTargetWorkspace === 'function') {
+          targetWorkspace = button.getTargetWorkspace();
+        } else if (button && button.workspace_) {
+          targetWorkspace = button.workspace_;
+        }
+        
+        // Ensure Blockly.prompt is set to our custom function
+        Blockly.prompt = customPrompt;
+        
+        // Use Blockly's built-in variable creation handler
+        // It will now use our custom prompt function
+        if (Blockly.Variables && typeof Blockly.Variables.createVariableButtonHandler === 'function') {
+          Blockly.Variables.createVariableButtonHandler(targetWorkspace);
+          return;
+        }
+        
+        // Fallback: Use custom prompt directly
+        const name = await customPrompt('Enter variable name:', 'item');
+        if (name && name.trim()) {
+          const varName = name.trim();
+          targetWorkspace.createVariable(varName);
+          
+          // Force UI update
+          if (Blockly.Events) {
+            Blockly.Events.fire(new Blockly.Events.VarCreate(null, targetWorkspace, varName));
+          }
+        }
+      } catch (error) {
+        console.error('Error in Create Variable callback:', error);
+        // Fallback: Use custom prompt directly
+        const name = await customPrompt('Enter variable name:', 'item');
+        if (name && name.trim()) {
+          workspace.createVariable(name.trim());
+        }
+      }
+    });
+    console.log('[INFO] Create Variable button callback registered');
+  } catch (error) {
+    console.error('❌ Failed to register Create Variable callback:', error);
+  }
+}, 100);
 
 window.addEventListener('resize', () => Blockly.svgResize(workspace));
 Blockly.svgResize(workspace);
@@ -71,8 +205,31 @@ function generateJavaScriptCode() {
 function generatePythonCode() {
   let code = '';
   try {
-    if (!Blockly.Python) throw new Error('Python generator missing');
-    code = Blockly.Python.workspaceToCode(workspace);
+    // Use enhanced code generator if available
+    if (typeof window.generateEnhancedPythonCode === 'function') {
+      code = window.generateEnhancedPythonCode(workspace);
+      console.log('[SUCCESS] Enhanced Python code generated with fixed pin mappings');
+    } else if (Blockly.Python) {
+      // Fallback to standard generator
+      code = Blockly.Python.workspaceToCode(workspace);
+      
+      // Add machine import if hardware functions are used
+      if (code.includes('machine.Pin') || code.includes('machine.ADC') || code.includes('machine.PWM') || 
+          code.includes('pin') && (code.includes('Pin(') || code.includes('.value('))) {
+        if (!code.includes('import machine')) {
+          code = 'from machine import Pin, PWM, ADC, SoftI2C\n' + code;
+        }
+      }
+      
+      // Add time import if delays are used
+      if (code.includes('time.sleep') && !code.includes('import time')) {
+        code = 'import time\n' + code;
+      }
+      
+      console.warn('[WARNING] Using standard Python generator. Enhanced generator not loaded.');
+    } else {
+      throw new Error('Python generator missing');
+    }
   } catch (err) {
     console.warn('Python generation failed, using JS->Python fallback:', err?.message || err);
     // Fallback: transform JS-ish code to Python-ish
@@ -88,7 +245,76 @@ function generatePythonCode() {
       .replace(/!=/g, '!=');
   }
   sendCodeToMonaco(code, 'python');
-  if (typeof window.setCurrentLanguage === 'function') window.setCurrentLanguage('python');
+  
+  // CRITICAL: Set language to Python and update dropdown
+  if (typeof window.setCurrentLanguage === 'function') {
+    window.setCurrentLanguage('python');
+  }
+  
+  // Also update dropdown directly to ensure it's set
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = 'python';
+    console.log('[INFO] Language dropdown set to Python after code generation');
+  }
+  
+  // Show message that Python doesn't need compilation
+  console.log('💡 Generated MicroPython code - use Upload or Run, not Compile');
+}
+
+// Real-time conversion of Blockly blocks into Python
+function setupRealTimePythonConversion() {
+  if (!workspace) return;
+  
+  // Listen for workspace changes
+  workspace.addChangeListener(function(event) {
+    // Only regenerate on meaningful changes (not just UI updates)
+    if (event.type === Blockly.Events.BLOCK_CREATE ||
+        event.type === Blockly.Events.BLOCK_DELETE ||
+        event.type === Blockly.Events.BLOCK_CHANGE ||
+        event.type === Blockly.Events.BLOCK_MOVE ||
+        event.type === Blockly.Events.VAR_CREATE ||
+        event.type === Blockly.Events.VAR_DELETE ||
+        event.type === Blockly.Events.VAR_RENAME) {
+      
+      // Debounce: wait a bit before regenerating
+      if (window.pythonRegenerateTimeout) {
+        clearTimeout(window.pythonRegenerateTimeout);
+      }
+      
+      window.pythonRegenerateTimeout = setTimeout(() => {
+        try {
+          if (Blockly.Python) {
+            let code = Blockly.Python.workspaceToCode(workspace);
+            
+            // Add machine import if hardware functions are used
+            if (code.includes('machine.Pin') || code.includes('machine.ADC') || code.includes('machine.PWM') || 
+                code.includes('pin') && (code.includes('Pin(') || code.includes('.value('))) {
+              // Check if import is already there
+              if (!code.includes('import machine')) {
+                code = 'import machine\n' + code;
+              }
+            }
+            
+            sendCodeToMonaco(code, 'python');
+            
+            // CRITICAL: Set language to Python and update dropdown
+            if (typeof window.setCurrentLanguage === 'function') {
+              window.setCurrentLanguage('python');
+            }
+            
+            // Also update dropdown directly to ensure it's set
+            const langSelect = document.getElementById('languageSelect');
+            if (langSelect) {
+              langSelect.value = 'python';
+            }
+          }
+        } catch (err) {
+          console.warn('Real-time Python conversion error:', err);
+        }
+      }, 300); // 300ms debounce
+    }
+  });
 }
 
 function generateCppCode() {
@@ -234,8 +460,94 @@ window.clearTerminal = clearTerminal;
 window.saveBlocksXML = saveBlocksXML;
 window.loadBlocksXML = loadBlocksXML;
 
+// ==============================
+// CHATBOT INITIALIZATION
+// ==============================
+let chatbotEngine = null;
+let chatbotUI = null;
+
+function initializeChatbot() {
+  try {
+    // Check if IPC is available
+    if (!window.electronAPI || !window.electronAPI.chatbotGenerateCode) {
+      console.error("❌ Electron IPC not available");
+      return false;
+    }
+
+    // Initialize the ChatbotUI
+    const chatbot = new window.ChatbotUI();
+    chatbot.init("#chatbot-container");
+
+    console.log("✅ Chatbot initialized");
+    return true;
+  } catch (error) {
+    console.error("❌ Chatbot init error:", error);
+    return false;
+  }
+}
+
+// ==============================
+// TAB SWITCHING
+// ==============================
+function setupTabSwitching() {
+  const tabButtons = document.querySelectorAll('.code-tab-btn');
+  const tabContents = document.querySelectorAll('.code-tab-content');
+
+  tabButtons.forEach(button => {
+    button.addEventListener('click', (e) => {
+      const tabId = button.getAttribute('data-tab');
+
+      // Remove active class from all buttons and contents
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+
+      // Add active class to clicked button and corresponding content
+      button.classList.add('active');
+      const activeTab = document.getElementById(tabId);
+      if (activeTab) {
+        activeTab.classList.add('active');
+      }
+
+      // Trigger resize for Monaco editor when switching back to code editor
+      if (tabId === 'code-editor-tab') {
+        setTimeout(() => {
+          if (workspace) {
+            Blockly.svgResize(workspace);
+          }
+          const monacoFrame = document.getElementById('monacoEditor');
+          if (monacoFrame && monacoFrame.contentWindow) {
+            monacoFrame.contentWindow.dispatchEvent(new Event('resize'));
+          }
+        }, 100);
+      }
+
+      // Focus chatbot input when switching to chatbot tab
+      if (tabId === 'chatbot-tab' && chatbotUI) {
+        setTimeout(() => {
+          chatbotUI.focus();
+        }, 100);
+      }
+
+      console.log(`📑 Switched to tab: ${tabId}`);
+    });
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   setupTerminalResize();
+  setupTabSwitching();
+  
+  // Setup real-time Python conversion after workspace is ready
+  setTimeout(() => {
+    if (workspace) {
+      setupRealTimePythonConversion();
+    }
+  }, 500);
+
+  // Initialize chatbot
+  setTimeout(() => {
+    initializeChatbot();
+  }, 1000);
 });
 
 

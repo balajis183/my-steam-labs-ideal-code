@@ -60,8 +60,9 @@ Blockly.C['touch_sensor'] = function() {
   return ['digitalRead(4)', Blockly.C.ORDER_FUNCTION_CALL]; 
 };
 
-Blockly.C['color_sensor'] = function() { 
-  return ['readColor()', Blockly.C.ORDER_FUNCTION_CALL]; 
+Blockly.C['color_sensor'] = function(block) {
+  const color = block.getFieldValue('COLOR') || 'red';
+  return [`readColor("${color}")`, Blockly.C.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.C['joystick1'] = function() { 

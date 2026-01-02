@@ -1,0 +1,110 @@
+{
+  "_NOTE": "✅ UPDATED: All pin numbers below match PIN MAPPING.pdf exactly!",
+  "_INSTRUCTIONS": "These pins are FIXED and should NOT be changed - they match the hardware configuration.",
+  "motors": {
+    "M1": {
+      "pinA": 19,
+      "pinB": 18,
+      "enable": null,
+      "pwm": true,
+      "description": "✅ Motor M1: GPIO19 (A), GPIO18 (B)"
+    },
+    "M2": {
+      "pinA": 5,
+      "pinB": 17,
+      "enable": null,
+      "pwm": true,
+      "description": "✅ Motor M2: GPIO5 (A), GPIO17 (B)"
+    },
+    "M3": {
+      "pinA": 23,
+      "pinB": 22,
+      "enable": null,
+      "pwm": true,
+      "description": "✅ Motor M3: GPIO23 (A), GPIO22 (B)"
+    },
+    "M4": {
+      "pinA": 21,
+      "pinB": 16,
+      "enable": null,
+      "pwm": true,
+      "description": "✅ Motor M4: GPIO21 (A), GPIO16 (B)"
+    }
+  },
+  "sensors": {
+    "ldr": {
+      "pin": 34,
+      "type": "analog",
+      "description": "✅ LDR at GPIO34"
+    },
+    "ir": {
+      "pin": 35,
+      "type": "analog",
+      "description": "✅ IR at GPIO35"
+    },
+    "temperature": {
+      "pin": 32,
+      "type": "analog",
+      "description": "✅ Temperature sensor at GPIO32"
+    },
+    "ultrasonic": {
+      "trig": 33,
+      "echo": 32,
+      "type": "digital",
+      "description": "✅ Ultrasonic: TRIG GPIO33, ECHO GPIO32"
+    },
+    "touch": {
+      "pin": 12,
+      "type": "digital",
+      "description": "✅ Touch sensor at GPIO12"
+    },
+    "buzzer": {
+      "pin": null,
+      "type": "pwm",
+      "description": "Buzzer pin"
+    }
+  },
+  "joystick": {
+    "joystick1": {
+      "vertical": 4,
+      "horizontal": 2,
+      "type": "analog",
+      "description": "✅ Joystick 1: V axis GPIO4, H axis GPIO2"
+    },
+    "joystick2": {
+      "vertical": 26,
+      "horizontal": 25,
+      "type": "analog",
+      "description": "✅ Joystick 2: V axis GPIO26, H axis GPIO25"
+    }
+  },
+  "oled": {
+    "sda": 13,
+    "scl": 15,
+    "type": "i2c",
+    "address": "0x3C",
+    "description": "✅ OLED: SDA GPIO13, SCL GPIO15"
+  },
+  "servo": {
+    "servo1": {
+      "pin": 23,
+      "type": "pwm",
+      "description": "✅ Servo Motor at GPIO23 (IO23)"
+    }
+  },
+  "communication": {
+    "i2c": {
+      "sda": 21,
+      "scl": 22,
+      "description": "I2C Bus - GPIO21 (SDA), GPIO22 (SCL)"
+    },
+    "spi": {
+      "mosi": 23,
+      "miso": 19,
+      "sck": 18,
+      "cs": 5,
+      "description": "SPI Bus - GPIO23 (MOSI), GPIO19 (MISO), GPIO18 (SCK), GPIO5 (CS)"
+    }
+  }
+}
+

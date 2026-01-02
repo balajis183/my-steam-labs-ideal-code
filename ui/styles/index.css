@@ -42,10 +42,85 @@ html, body {
 #codeArea {
   width: 30%;
   height: 100%;
-  padding: 10px;
   background: #fafafa;
   border-left: 1px solid #ccc;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Code Area Tabs */
+.code-area-tabs {
+  display: flex;
+  gap: 0;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.code-tab-btn {
+  padding: 10px 16px;
+  background: #e8e8e8;
+  color: #666;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  margin: 0;
+  border-radius: 0;
+}
+
+.code-tab-btn:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.code-tab-btn.active {
+  background: white;
+  color: #5A59FF;
+  border-bottom-color: #5A59FF;
+}
+
+/* Code Area Content */
+.code-area-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.code-tab-content {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  height: 100%;
+}
+
+.code-tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+#code-editor-tab {
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+#chatbot-tab {
+  padding: 0;
+}
+
+#chatbot-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Terminal Panel Styles */
@@ -55,8 +130,8 @@ html, body {
   border-top: 1px solid #333;
   display: none;
   flex-direction: column;
-  min-height: 200px;
-  max-height: 50vh;
+  height: 320px; /* FIXED HEIGHT - Change this value to adjust terminal height (e.g., 300px, 400px) */
+  flex-shrink: 0; /* Prevent terminal from shrinking */
 }
 
 #terminal-header {
@@ -116,14 +191,24 @@ html, body {
   font-size: 12px;
   overflow-y: auto;
   background: #1e1e1e;
+  /* Auto-scroll: instant (not smooth) for real-time data */
 }
 
 #terminal-output {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
-  line-height: 1.4;
+  line-height: 1.6;
+  font-size: 13px;
 }
+
+/* Professional terminal status colors */
+#terminal-output .status-info { color: #4FC1FF; }
+#terminal-output .status-success { color: #73C991; font-weight: 500; }
+#terminal-output .status-warning { color: #E5C07B; }
+#terminal-output .status-error { color: #E06C75; font-weight: 500; }
+#terminal-output .status-section { color: #ABB2BF; font-weight: 600; }
+#terminal-output .command-output { color: #666; font-style: italic; }
 
 /* Terminal toggle button */
 #terminal-toggle {

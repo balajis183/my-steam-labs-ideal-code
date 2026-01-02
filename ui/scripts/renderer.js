@@ -1,6 +1,7 @@
 console.log('⚡ renderer.js loaded');
 
 let currentPort = null;
+let currentBoardType = null; // NEW: Track board type
 let currentLanguage = 'python'; // Default language
 let lastGeneratedLanguage = 'python'; // Track last generated language
 let lastCompiledPath = null;
@@ -12,15 +13,37 @@ let isUploading = false;
 function appendTerminalOutput(message) {
   const terminalOutput = document.getElementById('terminal-output');
   if (terminalOutput) {
-    terminalOutput.textContent += message + '\n';
-    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    // Apply color coding for professional terminal look
+    let styledMessage = message;
+    if (message.includes('[SUCCESS]')) {
+      styledMessage = message.replace('[SUCCESS]', '<span style="color: #73C991; font-weight: 500;">[SUCCESS]</span>');
+    } else if (message.includes('[ERROR]')) {
+      styledMessage = message.replace('[ERROR]', '<span style="color: #E06C75; font-weight: 500;">[ERROR]</span>');
+    } else if (message.includes('[WARNING]')) {
+      styledMessage = message.replace('[WARNING]', '<span style="color: #E5C07B;">[WARNING]</span>');
+    } else if (message.includes('[INFO]')) {
+      styledMessage = message.replace('[INFO]', '<span style="color: #4FC1FF;">[INFO]</span>');
+    } else if (message.includes('[UPLOAD]') || message.includes('[COMPILE]') || message.includes('[RUN]') || message.includes('[SEND]')) {
+      styledMessage = message.replace(/\[(UPLOAD|COMPILE|RUN|SEND)\]/, '<span style="color: #ABB2BF; font-weight: 600;">[$1]</span>');
+    }
+    
+    // Append as HTML for colored output
+    const lineDiv = document.createElement('div');
+    lineDiv.innerHTML = styledMessage;
+    terminalOutput.appendChild(lineDiv);
+    
+    // Auto-scroll to bottom (scroll the container, not the output element)
+    const terminalContent = document.getElementById('terminal-content');
+    if (terminalContent) {
+      terminalContent.scrollTop = terminalContent.scrollHeight;
+    }
   }
 }
 
 function clearTerminal() {
   const terminalOutput = document.getElementById('terminal-output');
   if (terminalOutput) {
-    terminalOutput.textContent = '';
+    terminalOutput.innerHTML = ''; // Changed from textContent to innerHTML for colored output
   }
 }
 
@@ -121,7 +144,16 @@ function getCurrentLanguage() {
 
 // Set the current language when code is generated
 function setCurrentLanguage(language) {
+  currentLanguage = language;
   lastGeneratedLanguage = language;
+  
+  // Update language dropdown to match
+  const langSelect = document.getElementById('languageSelect');
+  if (langSelect) {
+    langSelect.value = language;
+    console.log(`✅ Language dropdown updated to: ${language}`);
+  }
+  
   console.log(`🎯 Language set to: ${language}`);
 }
 
@@ -144,10 +176,51 @@ function needsHardwarePort(code) {
     'machine.WDT'
   ];
   
-  const hasHardware = hardwareModules.some(module => code.includes(module));
+  // Custom hardware functions from Blockly generators
+  const customHardwareFunctions = [
+    'set_pin_mode',
+    'set_pin(',
+    'read_pin(',
+    'read_analog_pin',
+    'write_analog_pin',
+    'set_motor',
+    'set_servo',
+    'set_motor_speed',
+    'read_ldr',
+    'read_ir',
+    'read_temperature',
+    'read_ultrasonic',
+    'read_touch',
+    'read_color',
+    'read_joystick',
+    'oled_display',
+    'show_on_oled',
+    'display_variable_on_oled',
+    'display_char_on_oled',
+    'blink_text_on_oled',
+    'scroll_text_on_oled',
+    'wifi_connect',
+    'wifi_send',
+    'wifi_receive',
+    'bluetooth_setup',
+    'bluetooth_send',
+    'bluetooth_available',
+    'bluetooth_read'
+  ];
+  
+  // Check for standard hardware modules
+  const hasStandardHardware = hardwareModules.some(module => code.includes(module));
+  
+  // Check for custom hardware functions
+  const hasCustomHardware = customHardwareFunctions.some(func => code.includes(func));
+  
+  const hasHardware = hasStandardHardware || hasCustomHardware;
+  
   console.log(`🔍 Hardware detection for Python code:`, {
     code: code.substring(0, 200) + (code.length > 200 ? '...' : ''),
-    hardwareModules: hardwareModules.filter(module => code.includes(module)),
+    hasStandardHardware,
+    hasCustomHardware,
+    detectedFunctions: customHardwareFunctions.filter(func => code.includes(func)),
     needsHardware: hasHardware
   });
   
@@ -181,11 +254,11 @@ async function autoDetectLanguage() {
   const code = getCurrentCode();
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to analyze. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to analyze. Please generate some code first.');
     return;
   }
   
-  appendTerminalOutput('🔍 Auto-detecting language and hardware requirements...');
+  appendTerminalOutput('\n[INFO] Auto-detecting language and hardware requirements...');
   
   // Detect language
   let detectedLanguage = 'unknown';
@@ -214,20 +287,20 @@ async function autoDetectLanguage() {
   setCurrentLanguage(detectedLanguage);
   
   // Display results
-  appendTerminalOutput(`✅ Language detected: ${detectedLanguage.toUpperCase()}`);
-  appendTerminalOutput(`🔧 Hardware type: ${hardwareType}`);
+  appendTerminalOutput(`[SUCCESS] Language detected: ${detectedLanguage.toUpperCase()}`);
+  appendTerminalOutput(`[INFO] Hardware type: ${hardwareType}`);
   
   if (needsHardware) {
     if (currentPort) {
-      appendTerminalOutput(`✅ Hardware port selected: ${currentPort}`);
-      appendTerminalOutput(`💡 Ready to upload and run on hardware!`);
+      appendTerminalOutput(`[SUCCESS] Hardware port: ${currentPort}`);
+      appendTerminalOutput(`[INFO] Ready to upload and run on hardware\n`);
     } else {
-      appendTerminalOutput(`⚠️ Hardware code detected but no port selected`);
-      appendTerminalOutput(`💡 Please select a port to upload to hardware`);
+      appendTerminalOutput(`[WARNING] Hardware code detected but no port selected`);
+      appendTerminalOutput(`[INFO] Please select a port to upload to hardware\n`);
     }
   } else {
-    appendTerminalOutput(`✅ Standard code - can run locally`);
-    appendTerminalOutput(`💡 Use "Run" button to execute locally`);
+    appendTerminalOutput(`[SUCCESS] Standard code - can run locally`);
+    appendTerminalOutput(`[INFO] Use "Run" button to execute locally\n`);
   }
   
   appendTerminalOutput(`🎯 Auto-detection complete!`);
@@ -235,38 +308,139 @@ async function autoDetectLanguage() {
 
 // Helper to get selected language from dropdown or auto-detect
 function getSelectedLanguage(code) {
+  // First, detect language from code (most reliable)
+  const detectedLanguage = detectLanguageFromCode(code);
+  
   const langSelect = document.getElementById('languageSelect');
   if (langSelect) {
     const selected = langSelect.value;
+    
+    // If auto-detect is selected, use detected language
     if (selected === 'auto') {
-      // Auto-detect language
-      return detectLanguageFromCode(code);
-    } else if (selected === 'python' || selected === 'cpp' || selected === 'javascript' || selected === 'c') {
+      return detectedLanguage;
+    }
+    
+    // ⚠️ CRITICAL: If detected language is Python but dropdown says C++, trust the code!
+    // This prevents trying to compile Python code as C++
+    if (detectedLanguage === 'python' && selected === 'cpp') {
+      console.warn('⚠️ Language mismatch: Code is Python/MicroPython but dropdown says C++. Using Python.');
+      console.warn('⚠️ This prevents C++ compilation errors on Python code.');
+      // Update dropdown to match detected language
+      langSelect.value = 'python';
+      setCurrentLanguage('python');
+      return 'python';
+    }
+    
+    // If detected language is C++ but dropdown says Python, trust the code too
+    if (detectedLanguage === 'cpp' && selected === 'python') {
+      console.warn('⚠️ Language mismatch: Code is C++ but dropdown says Python. Using C++.');
+      langSelect.value = 'cpp';
+      setCurrentLanguage('cpp');
+      return 'cpp';
+    }
+    
+    // Otherwise, use dropdown selection
+    if (selected === 'python' || selected === 'cpp' || selected === 'javascript' || selected === 'c') {
       return selected;
     }
   }
+  
   // Fallback to auto-detect
-  return detectLanguageFromCode(code);
+  return detectedLanguage;
 }
 
 // Enhanced language detection function
+// ⚠️ CRITICAL: MicroPython detection MUST come FIRST to prevent false C/C++ detection
 function detectLanguageFromCode(code) {
   if (!code || !code.trim()) {
     return lastGeneratedLanguage || 'python';
   }
   
-  // C++ detection (more comprehensive)
+  // ============================================
+  // STEP 1: MicroPython Detection (HIGHEST PRIORITY)
+  // ============================================
+  // Check for MicroPython-specific patterns FIRST before any C/C++ detection
+  const microPythonIndicators = [
+    'from machine import',
+    'import machine',
+    'machine.Pin',
+    'machine.PWM',
+    'machine.ADC',
+    'machine.SoftI2C',
+    'import ssd1306',
+    'import dht',
+    'import servo',
+    'MicroPython',
+    'time.sleep_us',
+    'time.ticks_us',
+    'Pin.OUT',
+    'Pin.IN',
+    'PWM(',
+    'ADC(',
+    'SoftI2C(',
+    'MY STEAM LAB - Generated MicroPython Code',  // Header from our generator
+    'Ready to upload to ESP32 Dev Board via MicroPython'
+  ];
+  
+  const hasMicroPythonIndicator = microPythonIndicators.some(indicator => 
+    code.includes(indicator)
+  );
+  
+  if (hasMicroPythonIndicator) {
+    console.log('✅ Detected MicroPython code - returning python');
+    return 'python';
+  }
+  
+  // ============================================
+  // STEP 2: Standard Python Detection
+  // ============================================
+  // Check for Python patterns (but not C/C++ patterns)
+  const pythonIndicators = [
+    'def ',
+    'import ',
+    'print(',
+    'if __name__',
+    'try:',
+    'except:',
+    'with open(',
+    'class '  // Python classes (but not C++ classes with public:)
+  ];
+  
+  const hasPythonIndicator = pythonIndicators.some(indicator => 
+    code.includes(indicator)
+  );
+  
+  // Only return Python if it's clearly Python (not C/C++)
+  // Check that it's NOT C/C++ code
+  const isNotCpp = !code.includes('#include') && 
+                    !code.includes('void setup()') && 
+                    !code.includes('void loop()') &&
+                    !code.includes('int main()') &&
+                    !code.includes('Arduino.h');
+  
+  const isNotC = !code.includes('#include <stdio.h>') && 
+                 !code.includes('printf(') && 
+                 !code.includes('scanf(');
+  
+  if (hasPythonIndicator && isNotCpp && isNotC) {
+    console.log('✅ Detected Python code - returning python');
+    return 'python';
+  }
+  
+  // ============================================
+  // STEP 3: C++ Detection (only if NOT MicroPython/Python)
+  // ============================================
   if (code.includes('#include') || 
       code.includes('int main()') || 
       code.includes('void main()') ||
       code.includes('void setup()') || 
       code.includes('void loop()') ||
       code.includes('Arduino.h') ||
-      code.includes('ESP32') ||
+      (code.includes('ESP32') && code.includes('#include')) ||
       code.includes('std::cout') ||
       code.includes('std::cin') ||
       code.includes('namespace std') ||
-      code.includes('class ') ||
+      (code.includes('class ') && code.includes('public:')) ||
       code.includes('public:') ||
       code.includes('private:') ||
       code.includes('protected:') ||
@@ -278,32 +452,24 @@ function detectLanguageFromCode(code) {
       code.includes('cin >>') ||
       code.includes('return 0;') ||
       code.includes('using namespace')) {
+    console.log('✅ Detected C++ code - returning cpp');
     return 'cpp';
   }
   
-  // C detection
+  // ============================================
+  // STEP 4: C Detection (only if NOT MicroPython/Python/C++)
+  // ============================================
   if (code.includes('#include <stdio.h>') || 
-      code.includes('printf(') || 
-      code.includes('scanf(') ||
-      code.includes('main()') ||
-      code.includes('malloc(') ||
-      code.includes('free(')) {
+      (code.includes('printf(') && !code.includes('print(')) || 
+      (code.includes('scanf(') && !code.includes('input(')) ||
+      (code.includes('main()') && code.includes('#include'))) {
+    console.log('✅ Detected C code - returning c');
     return 'c';
   }
   
-  // Python detection
-  if (code.includes('import ') || 
-      code.includes('print(') || 
-      code.includes('def ') ||
-      code.includes('if __name__') ||
-      code.includes('class ') ||
-      code.includes('try:') ||
-      code.includes('except:') ||
-      code.includes('with open(')) {
-    return 'python';
-  }
-  
-  // JavaScript detection
+  // ============================================
+  // STEP 5: JavaScript Detection
+  // ============================================
   if (code.includes('function') || 
       code.includes('console.log') || 
       code.includes('var ') || 
@@ -312,9 +478,12 @@ function detectLanguageFromCode(code) {
       code.includes('=>') ||
       code.includes('async ') ||
       code.includes('await ')) {
+    console.log('✅ Detected JavaScript code - returning javascript');
     return 'javascript';
   }
   
+  // Default to Python (since we're generating MicroPython)
+  console.log(`⚠️ Language unclear, defaulting to: ${lastGeneratedLanguage || 'python'}`);
   return lastGeneratedLanguage || 'python';
 }
 
@@ -342,7 +511,13 @@ function autoDetectLanguageFromCode() {
 // Update compileCode, uploadCode, runCode to use getSelectedLanguage
 async function compileCode() {
   const code = getCurrentCode();
-  // Auto-detect language first
+  
+  if (!code.trim()) {
+    appendTerminalOutput('[ERROR] No code to compile. Please generate some code first.');
+    return;
+  }
+  
+  // Auto-detect language first (force detection from code, ignore dropdown if wrong)
   autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
@@ -352,22 +527,26 @@ async function compileCode() {
   console.log(`🎯 Detected language: ${language}`);
   console.log(`📝 Language dropdown value: ${document.getElementById('languageSelect')?.value}`);
   
-  if (!code.trim()) {
-    appendTerminalOutput('❌ No code to compile. Please generate some code first.');
+  // ⚠️ IMPORTANT: Python/MicroPython doesn't need compilation!
+  if (language === 'python') {
+    appendTerminalOutput('[INFO] Python/MicroPython is an interpreted language');
+    appendTerminalOutput('[INFO] Use "Upload" to transfer to ESP32 or "Run" to execute locally');
+    showTerminal();
     return;
   }
   
   // Automatically show terminal when compiling
   showTerminal();
   
-  appendTerminalOutput(`🔄 Compiling ${language} code...`);
+  appendTerminalOutput(`\n[COMPILE] Compiling ${language} code...`);
   
   try {
     let result;
     switch (language) {
       case 'python':
-        result = await window.electronAPI.compilePython(code);
-        break;
+        // Should not reach here, but handle just in case
+        appendTerminalOutput('[INFO] Python code does not need compilation. Use Upload or Run instead.');
+        return;
       case 'javascript':
         result = await window.electronAPI.compileJavaScript(code);
         break;
@@ -378,29 +557,40 @@ async function compileCode() {
         result = await window.electronAPI.compileC(code);
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language: ${language}`);
         return;
     }
     
     if (result.success) {
-      appendTerminalOutput(`✅ Compilation successful!`);
+      appendTerminalOutput(`[SUCCESS] Compilation successful!\n`);
       appendTerminalOutput(result.output || 'No output');
       lastCompiledPath = result.compiledPath;
       lastCompiledSuccess = true;
     } else {
-      appendTerminalOutput(`❌ Compilation failed:`);
+      appendTerminalOutput(`[ERROR] Compilation failed:`);
       appendTerminalOutput(result.error);
       lastCompiledSuccess = false;
     }
   } catch (error) {
-    appendTerminalOutput(`❌ Compilation error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Compilation error: ${error.message}`);
     lastCompiledSuccess = false;
   }
 }
 
 async function uploadCode() {
+  // Auto-open terminal when upload is clicked
+  const terminalPanel = document.getElementById('terminal-panel');
+  const toggleBtn = document.getElementById('terminal-toggle');
+  if (terminalPanel && terminalPanel.style.display === 'none') {
+    terminalPanel.style.display = 'flex';
+    if (toggleBtn) toggleBtn.textContent = 'Hide Terminal';
+    if (typeof terminalVisible !== 'undefined') {
+      terminalVisible = true;
+    }
+  }
+  
   if (isUploading) {
-    appendTerminalOutput('⏳ Upload already in progress...');
+    appendTerminalOutput('[INFO] Upload already in progress...');
     return;
   }
   isUploading = true;
@@ -408,15 +598,38 @@ async function uploadCode() {
   const uploadBtn = document.getElementById('uploadBtn');
   if (uploadBtn) uploadBtn.disabled = true;
   if (runBtn) runBtn.disabled = true;
-  const code = getCurrentCode();
+  let code = getCurrentCode();
   // Auto-detect language first
   autoDetectLanguageFromCode();
   const language = getSelectedLanguage(code);
   setCurrentLanguage(language);
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to upload. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to upload. Please generate some code first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
+  }
+  
+  // For Python/MicroPython: auto-fix indentation and format with black
+  if (language === 'python') {
+    try {
+      const fmt = await window.electronAPI.formatPython(code);
+      if (fmt && fmt.success && fmt.code) {
+        code = fmt.code;
+        // Update editor to show formatted code if available
+        const editorWindow = document.getElementById('monacoEditor').contentWindow;
+        if (editorWindow && editorWindow.setEditorValue) {
+          editorWindow.setEditorValue(code);
+        }
+        appendTerminalOutput('[SUCCESS] Code formatted successfully.');
+      } else if (fmt && !fmt.success) {
+        appendTerminalOutput(`[WARNING] Formatter not applied: ${fmt.error || 'unknown error'}`);
+      }
+    } catch (fmtErr) {
+      appendTerminalOutput(`[WARNING] Formatter error: ${fmtErr.message}`);
+    }
   }
   
   // Check if Python code needs hardware for upload
@@ -424,65 +637,127 @@ async function uploadCode() {
     const needsHardware = needsHardwarePort(code);
     
     if (needsHardware && !currentPort) {
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This code uses hardware-specific modules and needs to be uploaded to hardware.');
+      appendTerminalOutput('[ERROR] No port selected. Please select a port first.');
+      appendTerminalOutput('[INFO] This code requires hardware connection.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
-      appendTerminalOutput('💡 This is standard Python code. Use "Run" instead of "Upload" to execute locally.');
+      appendTerminalOutput('[INFO] This is standard Python code. Use "Run" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (language === 'cpp') {
     const needsHardware = needsHardwarePortCpp(code);
     
     if (needsHardware && !currentPort) {
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32) and needs to be uploaded to hardware.');
+      appendTerminalOutput('[ERROR] No port selected. Please select a port first.');
+      appendTerminalOutput('[INFO] This C++ code requires hardware connection.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
     
     if (!needsHardware) {
-      appendTerminalOutput('💡 This is standard C++ code. Use "Run" instead of "Upload" to execute locally.');
+      appendTerminalOutput('[INFO] This is standard C++ code. Use "Run" to execute locally.');
+      isUploading = false;
+      if (uploadBtn) uploadBtn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
       return;
     }
   } else if (!currentPort) {
     // For other languages, still require port
     appendTerminalOutput('❌ No port selected. Please select a port first.');
+    isUploading = false;
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (runBtn) runBtn.disabled = false;
     return;
   }
   
-  appendTerminalOutput(`📤 Uploading ${language} code to ${currentPort}...`);
+  // CRITICAL: Close serial monitor before upload (mpremote needs exclusive port access)
+  if (currentPort && language === 'python') {
+    appendTerminalOutput(`[INFO] Closing serial monitor for upload...`);
+    try {
+      await window.electronAPI.closeSerialPort();
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay
+    } catch (closeErr) {
+      console.log(`Warning: Error closing serial port: ${closeErr.message}`);
+    }
+  }
+  
+  appendTerminalOutput(`\n[UPLOAD] Uploading ${language} code to ${currentPort} (${currentBoardType || 'unknown'})...`);
   
   try {
     let result;
     switch (language) {
       case 'python':
-        result = await window.electronAPI.uploadPython(code, currentPort);
+        result = await window.electronAPI.uploadPython(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'javascript':
-        result = await window.electronAPI.uploadJavaScript(code, currentPort);
+        result = await window.electronAPI.uploadJavaScript(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'cpp':
-        result = await window.electronAPI.uploadCpp(code, currentPort);
+        result = await window.electronAPI.uploadCpp(code, currentPort, currentBoardType || 'unknown');
         break;
       case 'c':
-        result = await window.electronAPI.uploadC(code, currentPort);
+        result = await window.electronAPI.uploadC(code, currentPort, currentBoardType || 'unknown');
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language for upload: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language for upload: ${language}`);
+        isUploading = false;
+        if (uploadBtn) uploadBtn.disabled = false;
+        if (runBtn) runBtn.disabled = false;
         return;
     }
     
-    if (result.success) {
-      appendTerminalOutput(`✅ Upload successful!`);
+    console.log('🔍 [UPLOAD RESULT]', result); // DEBUG
+    
+    if (result && result.success) {
+      appendTerminalOutput(`\n[SUCCESS] Upload successful!\n`);
       appendTerminalOutput(result.output || 'No output');
+      
+      // Open serial monitor after successful upload (for Python/ESP32)
+      if (language === 'python' && currentPort) {
+        console.log('🔍 [SERIAL MONITOR] Attempting to reopen serial monitor...');
+        appendTerminalOutput(`[INFO] Opening serial monitor...`);
+        await new Promise(resolve => setTimeout(resolve, 1500)); // wait for board to boot
+        
+        try {
+          await openSerialMonitor(currentPort, false);
+          console.log('🔍 [SERIAL MONITOR] Serial monitor opened successfully');
+          
+          // CRITICAL: Send Ctrl+D to trigger MicroPython soft reset
+          // This makes the ESP32 re-run main.py and start sending output
+          await new Promise(resolve => setTimeout(resolve, 500));
+          console.log('🔍 [SERIAL MONITOR] Sending Ctrl+D to trigger main.py execution...');
+          try {
+            await window.electronAPI.sendSerialData(currentPort, '\x04'); // Ctrl+D = soft reset
+            console.log('🔍 [SERIAL MONITOR] Soft reset sent, main.py should start executing');
+            appendTerminalOutput(`[INFO] Executing code on ESP32...`);
+          } catch (ctrlDErr) {
+            console.warn('⚠️ [SERIAL MONITOR] Failed to send Ctrl+D:', ctrlDErr);
+          }
+          
+          appendTerminalOutput(`[INFO] Waiting for output... (press RESET button if nothing appears)\n`);
+        } catch (monitorErr) {
+          console.error('❌ [SERIAL MONITOR] Error opening:', monitorErr);
+          appendTerminalOutput(`[WARNING] Error opening serial monitor: ${monitorErr.message}`);
+          appendTerminalOutput(`[INFO] Try pressing the RESET button on your ESP32`);
+        }
+      }
     } else {
-      appendTerminalOutput(`❌ Upload failed:`);
-      appendTerminalOutput(result.error);
+      console.log('❌ [UPLOAD RESULT] Upload failed:', result);
+      appendTerminalOutput(`[ERROR] Upload failed:`);
+      appendTerminalOutput(result ? (result.error || 'Unknown error') : 'No result returned');
     }
   } catch (error) {
-    appendTerminalOutput(`❌ Upload error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Upload error: ${error.message}`);
   }
   finally {
     isUploading = false;
@@ -493,7 +768,7 @@ async function uploadCode() {
 
 async function runCode() {
   if (isRunning) {
-    appendTerminalOutput('⏳ A run is already in progress...');
+    appendTerminalOutput('[INFO] A run is already in progress...');
     return;
   }
   isRunning = true;
@@ -510,7 +785,7 @@ async function runCode() {
   console.log(`🎯 Running code in language: ${language}, currentPort: ${currentPort}`);
   
   if (!code.trim()) {
-    appendTerminalOutput('❌ No code to run. Please generate some code first.');
+    appendTerminalOutput('[ERROR] No code to run. Please generate some code first.');
     return;
   }
   
@@ -521,7 +796,7 @@ async function runCode() {
     if (needsHardware && !currentPort) {
       console.log('❌ Port validation failed: Python code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This code uses hardware-specific modules (machine, os.uname, etc.)');
+      appendTerminalOutput('[INFO] This code requires hardware connection');
       return;
     }
     
@@ -538,7 +813,7 @@ async function runCode() {
     if (needsHardware && !currentPort) {
       console.log('❌ Port validation failed: C++ code uses hardware modules but no port selected');
       appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('💡 This C++ code uses hardware-specific modules (Arduino/ESP32)');
+      appendTerminalOutput('[INFO] This C++ code requires hardware connection');
       return;
     }
     
@@ -551,7 +826,7 @@ async function runCode() {
     }
   }
   
-  appendTerminalOutput(`▶️ Running ${language} code...`);
+  appendTerminalOutput(`\n[RUN] Executing ${language} code...`);
   
   try {
     let result;
@@ -578,14 +853,14 @@ async function runCode() {
         result = await window.electronAPI.runC(code);
         break;
       default:
-        appendTerminalOutput(`❌ Unsupported language for running: ${language}`);
+        appendTerminalOutput(`[ERROR] Unsupported language for running: ${language}`);
         return;
     }
     
     appendTerminalOutput(`📋 Execution output:`);
     appendTerminalOutput(result);
   } catch (error) {
-    appendTerminalOutput(`❌ Execution error: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Execution error: ${error.message}`);
   }
   finally {
     isRunning = false;
@@ -629,7 +904,7 @@ window.testLanguageDetection = function() {
   console.log('📋 Language dropdown updated to:', detected);
 };
 
-// Serial port management
+// Serial port management - Enhanced COM port detection
 async function refreshPorts() {
   const portSelect = document.getElementById('portSelect');
   if (!portSelect) {
@@ -641,6 +916,9 @@ async function refreshPorts() {
   const ports = await window.electronAPI.listSerialPorts();
   console.log('🔌 Ports found:', ports);
 
+  // Store currently selected port
+  const currentSelection = portSelect.value;
+  
   portSelect.innerHTML = '';
   
   // Add default "Select Port" option
@@ -660,54 +938,154 @@ async function refreshPorts() {
     ports.forEach(port => {
       const option = document.createElement('option');
       option.value = port.path;
-      option.text = `${port.path} (${port.manufacturer || 'Unknown'})`;
+      // Store board type in data attribute
+      option.setAttribute('data-board-type', port.boardType || 'unknown');
+      // Enhanced display format: COM3 (ESP32 - Silicon Labs)
+      const boardLabel = port.boardType ? ` [${port.boardType.toUpperCase()}]` : '';
+      const displayName = port.manufacturer 
+        ? `${port.path}${boardLabel} (${port.manufacturer})`
+        : port.friendlyName 
+        ? `${port.path}${boardLabel} (${port.friendlyName})`
+        : `${port.path}${boardLabel}`;
+      option.text = displayName;
       portSelect.appendChild(option);
-      console.log(`  - ${port.path} (${port.manufacturer || 'Unknown'})`);
+      console.log(`  - ${port.path} (Board: ${port.boardType || 'unknown'}, ${port.manufacturer || port.friendlyName || 'Unknown'})`);
     });
+    
+    // Restore previous selection if it still exists
+    if (currentSelection && ports.some(p => p.path === currentSelection)) {
+      portSelect.value = currentSelection;
+      // Also restore board type
+      const selectedOption = portSelect.options[portSelect.selectedIndex];
+      currentBoardType = selectedOption.getAttribute('data-board-type') || 'unknown';
+    }
   }
 }
 
-// Port selection handler
+// Open serial monitor explicitly (after upload)
+async function openSerialMonitor(portPath, silent = false) {
+  if (!portPath) {
+    console.error('❌ [SERIAL MONITOR] No port path provided');
+    return;
+  }
+  const ESP32_BAUD_RATE = 115200;
+  console.log(`🔌 [SERIAL MONITOR] Opening port ${portPath} at ${ESP32_BAUD_RATE} baud...`);
+  
+  const result = await window.electronAPI.openSerialPort(portPath, ESP32_BAUD_RATE);
+  console.log(`🔌 [SERIAL MONITOR] Result:`, result);
+  
+  if (result && result.success) {
+    if (!silent) {
+      appendTerminalOutput(`[SUCCESS] Serial monitor opened on ${portPath} at ${ESP32_BAUD_RATE} baud`);
+      appendTerminalOutput(`[INFO] Listening for output...\n`);
+    }
+  } else {
+    const errorMsg = result ? (result.error || 'Unknown error') : 'No result';
+    console.error(`❌ [SERIAL MONITOR] Failed:`, errorMsg);
+    if (!silent) {
+      appendTerminalOutput(`[ERROR] Failed to open serial monitor on ${portPath}: ${errorMsg}`);
+    }
+  }
+}
+
+// Manual Serial Monitor function removed - Serial Monitor now opens automatically after upload
+// This prevents port conflicts and provides a better user experience
+
+// Port selection handler (no auto monitor)
 async function selectPort(portPath, silent = false) {
   if (!portPath) {
     console.log('⚠️ No port path provided to selectPort');
     return;
   }
-  
   console.log(`🔌 Attempting to select port: ${portPath}`);
   currentPort = portPath;
-  const result = await window.electronAPI.openSerialPort(portPath, 115200);
   
-  if (result.success) {
-    console.log(`✅ Successfully connected to ${portPath}`);
-    // Update the port select to show the selected port
-    const portSelect = document.getElementById('portSelect');
-    if (portSelect) {
-      portSelect.value = portPath;
-    }
-    if (!silent) {
-      appendTerminalOutput(`✅ Connected to ${portPath}`);
-    }
-  } else {
-    console.error(`❌ Failed to connect to ${portPath}: ${result.error}`);
-    appendTerminalOutput(`❌ Failed to connect to ${portPath}: ${result.error}`);
+  // Get board type from the selected option
+  const portSelect = document.getElementById('portSelect');
+  if (portSelect) {
+    portSelect.value = portPath;
+    const selectedOption = portSelect.options[portSelect.selectedIndex];
+    currentBoardType = selectedOption.getAttribute('data-board-type') || 'unknown';
+    console.log(`🔍 Board type detected: ${currentBoardType}`);
+  }
+  
+  if (!silent) {
+    appendTerminalOutput(`\n[INFO] Port selected: ${portPath} (${currentBoardType})`);
+    appendTerminalOutput(`[INFO] Serial monitor will open after upload completes.\n`);
   }
 }
 
-// Event listeners for serial data
+// Event listeners for serial data - Enhanced Serial Monitor
 window.electronAPI.onSerialData((data) => {
-  appendTerminalOutput(`📡 Serial: ${data}`);
+  // Mirror raw data to browser console for debugging
+  console.log('🔌 [SERIAL DATA]', data);
+
+  // Display serial data in terminal (Serial Monitor)
+  const trimmedData = (data || '').trim();
+  if (trimmedData) {
+    appendTerminalOutput(trimmedData);
+    // Note: appendTerminalOutput already handles auto-scroll
+  }
 });
 
+// Serial Monitor: Send data to connected port
+async function sendSerialData(data) {
+  if (!currentPort) {
+    appendTerminalOutput('❌ No port selected. Please select a port first.');
+    return;
+  }
+  
+  try {
+    // Send data via serial port
+    // Note: This requires a new IPC handler in main.js
+    appendTerminalOutput(`[SEND] ${data}`);
+    // The actual sending will be handled by the main process
+    // For now, we'll use mpremote to send data
+    const result = await window.electronAPI.sendSerialData(currentPort, data);
+    if (result && result.success) {
+      appendTerminalOutput('[SUCCESS] Data sent successfully');
+    } else {
+      appendTerminalOutput(`[ERROR] Failed to send data: ${result?.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    appendTerminalOutput(`[ERROR] Error sending serial data: ${error.message}`);
+  }
+}
+
+// Make sendSerialData globally available
+window.sendSerialData = sendSerialData;
+
+// Serial Monitor: Send input from text field
+async function sendSerialInput() {
+  const inputField = document.getElementById('serial-input');
+  if (!inputField) return;
+  
+  const data = inputField.value.trim();
+  if (!data) return;
+  
+  if (!currentPort) {
+    appendTerminalOutput('❌ No port selected. Please select a port first.');
+    return;
+  }
+  
+  await sendSerialData(data);
+  inputField.value = ''; // Clear input field
+}
+
+// Make sendSerialInput globally available
+window.sendSerialInput = sendSerialInput;
+
 window.electronAPI.onTerminalOutput((data) => {
+  // Also mirror terminal output to console for easier debugging
+  console.log('🖥️ [TERMINAL]', data);
   appendTerminalOutput(data);
 });
 
 window.electronAPI.onReopenPort(async (port) => {
-  appendTerminalOutput(`🔄 Reconnecting to ${port}...`);
+  appendTerminalOutput(`[INFO] Reconnecting to ${port}...`);
   await new Promise(resolve => setTimeout(resolve, 1500));
   await selectPort(port, true);
-  appendTerminalOutput(`✅ Reconnected to ${port}`);
+  appendTerminalOutput(`[SUCCESS] Reconnected to ${port}`);
 });
 
 // Port selection change handler
@@ -720,31 +1098,45 @@ function setupPortSelection() {
   }
 }
 
-// Board status check
+// Board status check with auto-refresh
 function setupBoardStatusCheck() {
   const checkConnectionBtn = document.getElementById('checkConnectionBtn');
   const statusIndicator = document.getElementById('connection-status');
   
-  if (checkConnectionBtn && statusIndicator) {
-    checkConnectionBtn.addEventListener('click', async () => {
-      statusIndicator.style.backgroundColor = 'grey';
-      try {
-        const status = await window.electronAPI.checkBoard();
-        console.log('🟡 Board status:', status);
-        
-        if (status === 'connected') {
-          statusIndicator.style.backgroundColor = 'green';
-        } else if (status === 'disconnected') {
-          statusIndicator.style.backgroundColor = 'red';
-        } else {
-          statusIndicator.style.backgroundColor = 'grey';
-        }
-      } catch (error) {
-        console.error('❌ Board status check failed:', error);
+  // Function to update status indicator
+  async function updateBoardStatus() {
+    if (!statusIndicator) return;
+    
+    try {
+      const status = await window.electronAPI.checkBoard();
+      console.log('🟡 Board status:', status);
+      
+      if (status === 'connected') {
+        statusIndicator.style.backgroundColor = 'green';
+        statusIndicator.title = 'Board Connected';
+      } else if (status === 'disconnected') {
+        statusIndicator.style.backgroundColor = 'red';
+        statusIndicator.title = 'Board Disconnected';
+      } else {
         statusIndicator.style.backgroundColor = 'grey';
+        statusIndicator.title = 'Status Unknown';
       }
-    });
+    } catch (error) {
+      console.error('❌ Board status check failed:', error);
+      statusIndicator.style.backgroundColor = 'grey';
+      statusIndicator.title = 'Status Check Failed';
+    }
   }
+  
+  if (checkConnectionBtn) {
+    checkConnectionBtn.addEventListener('click', updateBoardStatus);
+  }
+  
+  // Auto-refresh status every 5 seconds
+  setInterval(updateBoardStatus, 5000);
+  
+  // Initial status check
+  updateBoardStatus();
 }
 
 // ESP32 connection test
@@ -758,18 +1150,18 @@ function setupEsp32ConnectionTest() {
         return;
       }
       
-      appendTerminalOutput(`🔍 Testing ESP32 connection on ${currentPort}...`);
+      appendTerminalOutput(`[INFO] Testing ESP32 connection on ${currentPort}...`);
       
       try {
         const result = await window.electronAPI.testEsp32Connection(currentPort);
         if (result.success) {
-          appendTerminalOutput('✅ ESP32 connection test successful!');
+          appendTerminalOutput('[SUCCESS] ESP32 connection test successful!');
           appendTerminalOutput(result.output || 'No output');
         } else {
-          appendTerminalOutput(`❌ ESP32 connection test failed: ${result.error}`);
+          appendTerminalOutput(`[ERROR] ESP32 connection test failed: ${result.error}`);
         }
       } catch (error) {
-        appendTerminalOutput(`❌ ESP32 connection test error: ${error.message}`);
+        appendTerminalOutput(`[ERROR] ESP32 connection test error: ${error.message}`);
       }
     });
   }
@@ -823,7 +1215,7 @@ async function saveCode() {
     // Wait for Monaco editor to be ready
     const editorWindow = document.getElementById('monacoEditor').contentWindow;
     if (!editorWindow) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
 
@@ -835,7 +1227,7 @@ async function saveCode() {
     }
 
     if (!editorWindow.getEditorValue) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
 
@@ -843,7 +1235,7 @@ async function saveCode() {
     const language = getCurrentLanguage();
     
     if (!code || code.trim() === '') {
-      appendTerminalOutput('❌ No code to save. Please generate some code first.');
+      appendTerminalOutput('[ERROR] No code to save. Please generate some code first.');
       return;
     }
     
@@ -851,28 +1243,28 @@ async function saveCode() {
     const result = await window.electronAPI.saveCode(code, language);
     
     if (result.success) {
-      appendTerminalOutput(`✅ Code saved successfully!`);
+      appendTerminalOutput(`[SUCCESS] Code saved successfully!`);
     } else {
-      appendTerminalOutput(`❌ Failed to save code: ${result.error}`);
+      appendTerminalOutput(`[ERROR] Failed to save code: ${result.error}`);
     }
   } catch (error) {
     console.error('Error saving code:', error);
-    appendTerminalOutput(`❌ Error saving code: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Error saving code: ${error.message}`);
   }
 }
 
 // Load Code Function
 async function loadCode() {
   try {
-    appendTerminalOutput('⏳ Checking if editor is ready...');
+    appendTerminalOutput('[INFO] Checking if editor is ready...');
     
     // Wait for Monaco editor to be ready
     if (!await waitForEditor()) {
-      appendTerminalOutput('❌ Editor not ready. Please wait a moment and try again.');
+      appendTerminalOutput('[ERROR] Editor not ready. Please wait a moment and try again.');
       return;
     }
     
-    appendTerminalOutput('✅ Editor is ready');
+    appendTerminalOutput('[SUCCESS] Editor is ready');
     
     const editorWindow = document.getElementById('monacoEditor').contentWindow;
     const language = getCurrentLanguage();
@@ -887,18 +1279,18 @@ async function loadCode() {
         if (editorWindow.setEditorLanguage) {
           editorWindow.setEditorLanguage(result.language || language);
         }
-        appendTerminalOutput(`✅ Code loaded successfully from: ${result.filePath}`);
+        appendTerminalOutput(`[SUCCESS] Code loaded from: ${result.filePath}`);
         // Update the current language
         setCurrentLanguage(result.language || language);
       } else {
-        appendTerminalOutput(`⚠️ Editor not ready. Please try again.`);
+        appendTerminalOutput(`[WARNING] Editor not ready. Please try again.`);
       }
     } else {
-      appendTerminalOutput(`❌ Failed to load code: ${result.error}`);
+      appendTerminalOutput(`[ERROR] Failed to load code: ${result.error}`);
     }
   } catch (error) {
     console.error('Error loading code:', error);
-    appendTerminalOutput(`❌ Error loading code: ${error.message}`);
+    appendTerminalOutput(`[ERROR] Error loading code: ${error.message}`);
   }
 }
 
@@ -919,14 +1311,14 @@ window.debugEditor = function() {
     console.log('Editor methods:', Object.getOwnPropertyNames(editorWindow));
   }
   
-  appendTerminalOutput('🔍 Editor debug info logged to console');
+  appendTerminalOutput('[INFO] Editor debug info logged to console');
 };
 
 // Listen for editor ready signal from Monaco iframe
 window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'editorReady') {
     console.log('✅ Monaco editor signaled ready');
-    appendTerminalOutput('✅ Monaco editor is ready');
+    appendTerminalOutput('[SUCCESS] Monaco editor is ready');
   }
 });
 

@@ -8,75 +8,106 @@ if (!Blockly.Python.forBlock) {
   Blockly.Python.forBlock = Object.create(null);
 }
 
+// Ensure ORDER constants are defined (required for code generation)
+if (typeof Blockly.Python.ORDER_ATOMIC === 'undefined') {
+  Blockly.Python.ORDER_ATOMIC = 0;
+  Blockly.Python.ORDER_FUNCTION_CALL = 1;
+  Blockly.Python.ORDER_NONE = 99;
+  Blockly.Python.ORDER_ASSIGNMENT = 1;
+  Blockly.Python.ORDER_ADDITION = 2;
+  Blockly.Python.ORDER_SUBTRACTION = 2;
+  Blockly.Python.ORDER_MULTIPLICATION = 3;
+  Blockly.Python.ORDER_DIVISION = 3;
+  Blockly.Python.ORDER_EXPONENTIATION = 4;
+  Blockly.Python.ORDER_RELATIONAL = 5;
+  Blockly.Python.ORDER_EQUALITY = 6;
+  Blockly.Python.ORDER_LOGICAL_AND = 7;
+  Blockly.Python.ORDER_LOGICAL_OR = 8;
+  Blockly.Python.ORDER_LOGICAL_NOT = 9;
+}
+
 Blockly.Python.forBlock['set_pin'] = function(block, generator){
   const pin = generator.valueToCode(block, 'PIN', generator.ORDER_ATOMIC || 0) || '0';
   const value = generator.valueToCode(block, 'VALUE', generator.ORDER_ATOMIC || 0) || '0';
-  return `set_pin(${pin}, ${value})\n`;
+  return `pin${pin}.value(${value})\n`;
 };
 Blockly.Python.forBlock['read_pin'] = function(block, generator){
   const pin = generator.valueToCode(block, 'PIN', generator.ORDER_ATOMIC || 0) || '0';
-  return [`read_pin(${pin})`, generator.ORDER_FUNCTION_CALL || 0];
+  return [`pin${pin}.value()`, generator.ORDER_FUNCTION_CALL || 0];
 };
 
 Blockly.Python['set_pin'] = function(block) {
   var pin = Blockly.Python.valueToCode(block, 'PIN', Blockly.Python.ORDER_ATOMIC || 0) || '0';
   var value = Blockly.Python.valueToCode(block, 'VALUE', Blockly.Python.ORDER_ATOMIC || 0) || '0';
-  return 'set_pin(' + pin + ', ' + value + ')\n';
+  // Generate proper MicroPython code
+  return `pin${pin}.value(${value})\n`;
 };
 
 Blockly.Python['read_pin'] = function(block) {
   var pin = Blockly.Python.valueToCode(block, 'PIN', Blockly.Python.ORDER_ATOMIC || 0) || '0';
-  return ['read_pin(' + pin + ')', Blockly.Python.ORDER_FUNCTION_CALL || 0];
+  // Generate proper MicroPython code
+  return [`pin${pin}.value()`, Blockly.Python.ORDER_FUNCTION_CALL || 0];
 };
 
 Blockly.Python['dc_motor'] = function(block) {
   var motor = block.getFieldValue('MOTOR');
   var speed = Blockly.Python.valueToCode(block, 'SPEED', Blockly.Python.ORDER_ATOMIC) || '0';
   var direction = block.getFieldValue('DIRECTION');
+  // Use fixed pin mapping - motor pins are defined in pin definitions section
   return 'set_motor("' + motor + '", ' + speed + ', "' + direction + '")\n';
 };
 
 Blockly.Python['servo_motor'] = function(block) {
-  var servo = block.getFieldValue('SERVO');
+  var servoNum = block.getFieldValue('SERVO') || '1';
   var angle = Blockly.Python.valueToCode(block, 'ANGLE', Blockly.Python.ORDER_ATOMIC) || '0';
-  return 'set_servo(' + servo + ', ' + angle + ')\n';
+  // Always use servo1 (only one servo motor supported)
+  return 'servo1.write(' + angle + ')\nprint("Servo -> Angle:", ' + angle + ')\n';
 };
 
 Blockly.Python['ldr_sensor'] = function() { 
+  // ✅ LDR sensor uses fixed GPIO34 pin (from PIN MAPPING.pdf)
   return ['read_ldr()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['ir_sensor'] = function() { 
+  // ✅ IR sensor uses fixed GPIO35 pin (from PIN MAPPING.pdf)
   return ['read_ir()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['temp_sensor'] = function() { 
+  // ✅ Temperature sensor uses fixed GPIO32 pin (from PIN MAPPING.pdf)
   return ['read_temperature()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['ultrasonic_sensor'] = function() { 
+  // ✅ Ultrasonic sensor uses fixed GPIO33 (TRIG) and GPIO32 (ECHO) pins (from PIN MAPPING.pdf)
   return ['read_ultrasonic()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['touch_sensor'] = function() { 
+  // ✅ Touch sensor uses fixed GPIO12 pin (from PIN MAPPING.pdf)
   return ['read_touch()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
-Blockly.Python['color_sensor'] = function() { 
-  return ['read_color()', Blockly.Python.ORDER_FUNCTION_CALL]; 
+Blockly.Python['color_sensor'] = function(block) { 
+  const color = block.getFieldValue('COLOR') || 'red';
+  return [`read_color("${color}")`, Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['joystick1'] = function() { 
+  // ✅ Joystick 1 uses fixed GPIO4 (V) and GPIO2 (H) pins (from PIN MAPPING.pdf)
   return ['read_joystick1()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['joystick2'] = function() { 
+  // ✅ Joystick 2 uses fixed GPIO26 (V) and GPIO25 (H) pins (from PIN MAPPING.pdf)
   return ['read_joystick2()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
 Blockly.Python['oled_show'] = function(block) {
   var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
-  return 'oled_display(' + text + ')\n';
+  // ✅ OLED uses fixed GPIO13 (SDA) and GPIO15 (SCL) pins via I2C (from PIN MAPPING.pdf)
+  return 'show_on_oled(' + text + ', 0, 0, "white")\n';
 };
 
 Blockly.Python['oled_show_color'] = function(block) {
@@ -97,31 +128,46 @@ Blockly.Python['oled_display_colored'] = function(block) {
 // NEW PYTHON GENERATORS FOR MISSING BLOCKS
 // ========================================
 
-// Pin mode configuration
+// Pin mode configuration - Generate proper MicroPython code
 Blockly.Python['pin_mode'] = function(block) {
   var pin = block.getFieldValue('PIN');
   var mode = block.getFieldValue('MODE');
-  return `set_pin_mode(${pin}, ${mode})\n`;
+  // Convert mode to MicroPython Pin constants
+  var modeMap = {
+    'INPUT': 'machine.Pin.IN',
+    'OUTPUT': 'machine.Pin.OUT',
+    'INPUT_PULLUP': 'machine.Pin.IN, machine.Pin.PULL_UP'
+  };
+  var micropythonMode = modeMap[mode] || 'machine.Pin.OUT';
+  return `pin${pin} = machine.Pin(${pin}, ${micropythonMode})\n`;
 };
 
-// Analog read
+// Analog read - Generate proper MicroPython code
 Blockly.Python['analog_read'] = function(block) {
   var pin = block.getFieldValue('PIN');
-  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+  return [`machine.ADC(machine.Pin(${pin})).read()`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
-// Analog write (PWM)
+// Analog write (PWM) - Generate proper MicroPython code
 Blockly.Python['analog_write'] = function(block) {
   var pin = block.getFieldValue('PIN');
   var value = block.getFieldValue('VALUE');
-  return `write_analog_pin(${pin}, ${value})\n`;
+  return `pwm${pin} = machine.PWM(machine.Pin(${pin}))\npwm${pin}.duty(${value})\n`;
 };
 
-// Motor speed control
+// Motor speed control (simplified block - uses default FORWARD direction)
 Blockly.Python['motor_speed'] = function(block) {
   var motor = block.getFieldValue('MOTOR');
   var speed = block.getFieldValue('SPEED');
-  return `set_motor_speed("${motor}", ${speed})\n`;
+  // Call the main set_motor function with default FORWARD direction
+  return `set_motor("${motor}", ${speed}, "FORWARD")\n`;
+};
+
+// Servo angle control (simplified block)
+Blockly.Python['servo_angle'] = function(block) {
+  var angle = block.getFieldValue('ANGLE');
+  // ✅ Servo uses GPIO23 (IO23)
+  return `servo1.write(${angle})\nprint("Servo -> Angle:", ${angle})\n`;
 };
 
 // IR sensor analog read
@@ -148,6 +194,18 @@ Blockly.Python['wifi_send'] = function(block) {
 Blockly.Python['wifi_receive'] = function(block) {
   var port = block.getFieldValue('PORT');
   return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['wifi_is_connected'] = function() {
+  return ['wifi_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['wifi_get_ip'] = function() {
+  return ['wifi_get_ip()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['wifi_disconnect'] = function() {
+  return 'wifi_disconnect()\n';
 };
 
 // Enhanced OLED display variable
@@ -216,24 +274,78 @@ Blockly.Python['my_program'] = function(block) {
   return 'def msl():\n' + safeBody;
 };
 
+// Helper function to get variable name (Blockly v12 compatible)
+function getVariableName(block, varId) {
+  try {
+    // Method 1: Get from variable field (most reliable in v12)
+    const varField = block.getField('VAR');
+    if (varField) {
+      // Try getText() first (shows the display name)
+      if (typeof varField.getText === 'function') {
+        const text = varField.getText();
+        if (text && text.trim()) return text.trim();
+      }
+      // Try getValue() to get the variable ID, then resolve it
+      if (typeof varField.getValue === 'function') {
+        const id = varField.getValue();
+        if (id && id !== varId) varId = id;
+      }
+    }
+    
+    // Method 2: Use workspace variable map (Blockly v12 API)
+    const workspace = block.getWorkspace();
+    if (workspace && workspace.getVariableMap) {
+      const variable = workspace.getVariableMap().getVariableById(varId);
+      if (variable && variable.name) {
+        return variable.name;
+      }
+    }
+    
+    // Method 3: Try nameDB_ (older API fallback)
+    if (Blockly.Python.nameDB_ && typeof Blockly.Python.nameDB_.getName === 'function') {
+      try {
+        return Blockly.Python.nameDB_.getName(varId, Blockly.Python.NAME_TYPE);
+      } catch (e) {
+        // nameDB_ might not be initialized yet
+      }
+    }
+    
+    // Method 4: Use variable field's text directly as last resort
+    if (varField && varField.text_) {
+      return varField.text_;
+    }
+    
+    // Last resort: return a sanitized version of the ID
+    return (varId || 'var').replace(/[^a-zA-Z0-9_]/g, '_');
+  } catch (e) {
+    console.warn('Error getting variable name:', e);
+    // Ultimate fallback
+    return (varId || 'var').replace(/[^a-zA-Z0-9_]/g, '_');
+  }
+}
+
 Blockly.Python['variables_declare'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   return v + ' = None\n';
 };
 
 Blockly.Python['variables_define'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   const val = Blockly.Python.valueToCode(block, 'VALUE', Blockly.Python.ORDER_ASSIGNMENT) || '0';
   return v + ' = ' + val + '\n';
 };
 
 Blockly.Python['variables_get'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   return [v, Blockly.Python.ORDER_ATOMIC];
 };
 
 Blockly.Python['math_change'] = function(block) {
-  const v = Blockly.Python.nameDB_.getName(block.getFieldValue('VAR'), Blockly.Python.NAME_TYPE);
+  const varId = block.getFieldValue('VAR');
+  const v = getVariableName(block, varId);
   const delta = Blockly.Python.valueToCode(block, 'DELTA', Blockly.Python.ORDER_ADDITION) || '0';
   return v + ' += ' + delta + '\n';
 };
@@ -256,10 +368,24 @@ Blockly.Python['bluetooth_read'] = function() {
   return ['bluetooth_read()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
+Blockly.Python['bluetooth_is_connected'] = function() {
+  return ['bluetooth_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python['bluetooth_get_status'] = function() {
+  return ['bluetooth_get_status()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
 // Text blocks
 Blockly.Python['text'] = function(block) {
   const text = block.getFieldValue('TEXT');
   return ['"' + text + '"', Blockly.Python.ORDER_ATOMIC];
+};
+
+// forBlock version for text
+Blockly.Python.forBlock['text'] = function(block, generator) {
+  const text = block.getFieldValue('TEXT');
+  return ['"' + text + '"', generator.ORDER_ATOMIC || 0];
 };
 
 Blockly.Python['text_print'] = function(block) {
@@ -267,35 +393,64 @@ Blockly.Python['text_print'] = function(block) {
   return 'print(' + text + ')\n';
 };
 
+// forBlock version for text_print
+Blockly.Python.forBlock['text_print'] = function(block, generator) {
+  const text = generator.valueToCode(block, 'TEXT', generator.ORDER_NONE || 99) || '""';
+  return 'print(' + text + ')\n';
+};
+
 // ========================================
 // NEW PYTHON FORBLOCK GENERATORS FOR MISSING BLOCKS
 // ========================================
 
-// Pin mode configuration
+// Pin mode configuration - Generate proper MicroPython code
 Blockly.Python.forBlock['pin_mode'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
   var mode = block.getFieldValue('MODE');
-  return `set_pin_mode(${pin}, ${mode})\n`;
+  // Convert mode to MicroPython Pin constants
+  var modeMap = {
+    'INPUT': 'machine.Pin.IN',
+    'OUTPUT': 'machine.Pin.OUT',
+    'INPUT_PULLUP': 'machine.Pin.IN, machine.Pin.PULL_UP'
+  };
+  var micropythonMode = modeMap[mode] || 'machine.Pin.OUT';
+  return `pin${pin} = machine.Pin(${pin}, ${micropythonMode})\n`;
 };
 
-// Analog read
+// Analog read - Generate proper MicroPython code
 Blockly.Python.forBlock['analog_read'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
-  return [`read_analog_pin(${pin})`, Blockly.Python.ORDER_FUNCTION_CALL];
+  return [`machine.ADC(machine.Pin(${pin})).read()`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
-// Analog write (PWM)
+// Analog write (PWM) - Generate proper MicroPython code
 Blockly.Python.forBlock['analog_write'] = function(block, generator) {
   var pin = block.getFieldValue('PIN');
   var value = block.getFieldValue('VALUE');
-  return `write_analog_pin(${pin}, ${value})\n`;
+  return `pwm${pin} = machine.PWM(machine.Pin(${pin}))\npwm${pin}.duty(${value})\n`;
 };
 
-// Motor speed control
+// Motor speed control (simplified block - uses default FORWARD direction)
 Blockly.Python.forBlock['motor_speed'] = function(block, generator) {
   var motor = block.getFieldValue('MOTOR');
   var speed = block.getFieldValue('SPEED');
-  return `set_motor_speed("${motor}", ${speed})\n`;
+  // Call the main set_motor function with default FORWARD direction
+  return `set_motor("${motor}", ${speed}, "FORWARD")\n`;
+};
+
+// Servo motor control (with value input)
+Blockly.Python.forBlock['servo_motor'] = function(block, generator) {
+  var servoNum = block.getFieldValue('SERVO') || '1';
+  var angle = generator.valueToCode(block, 'ANGLE', generator.ORDER_ATOMIC) || '0';
+  // Always use servo1 (only one servo motor supported)
+  return `servo1.write(${angle})\nprint("Servo -> Angle:", ${angle})\n`;
+};
+
+// Servo angle control (simplified block)
+Blockly.Python.forBlock['servo_angle'] = function(block, generator) {
+  var angle = block.getFieldValue('ANGLE');
+  // ✅ Servo uses GPIO23 (IO23)
+  return `servo1.write(${angle})\nprint("Servo -> Angle:", ${angle})\n`;
 };
 
 // IR sensor analog read
@@ -322,6 +477,18 @@ Blockly.Python.forBlock['wifi_send'] = function(block, generator) {
 Blockly.Python.forBlock['wifi_receive'] = function(block, generator) {
   var port = block.getFieldValue('PORT');
   return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_is_connected'] = function(block, generator) {
+  return ['wifi_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_get_ip'] = function(block, generator) {
+  return ['wifi_get_ip()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+Blockly.Python.forBlock['wifi_disconnect'] = function(block, generator) {
+  return 'wifi_disconnect()\n';
 };
 
 // Enhanced OLED display variable
@@ -360,17 +527,36 @@ Blockly.Python.forBlock['oled_animation_scroll'] = function(block, generator) {
 (function ensurePyForBlockProxies(){
   const api = Blockly.Python;
   const types = [
-    'set_pin','read_pin','dc_motor','servo_motor','ldr_sensor','ir_sensor','temp_sensor',
+    'set_pin','read_pin','dc_motor','servo_motor','servo_angle','motor_speed','ldr_sensor','ir_sensor','temp_sensor',
     'ultrasonic_sensor','touch_sensor','color_sensor','joystick1','joystick2','oled_show','oled_show_color',
     'oled_display_colored','time_delay','enhanced_if','enhanced_compare','enhanced_logic',
     'controls_if','controls_repeat_ext','controls_whileUntil','math_number','math_arithmetic',
     'logic_compare','logic_operation','logic_negate','logic_boolean','variables_declare',
     'variables_define','variables_get','math_change','text','text_print','bluetooth_setup',
-    'bluetooth_send','bluetooth_available','bluetooth_read','my_program'
+    'bluetooth_send','bluetooth_available','bluetooth_read','my_program','ir_sensor_analog'
   ];
   types.forEach(t => {
     if (!api.forBlock[t] && typeof api[t] === 'function') {
       api.forBlock[t] = function(block, generator){
+        // Ensure ORDER constants are available
+        if (!generator.ORDER_ATOMIC && api.ORDER_ATOMIC !== undefined) {
+          Object.assign(generator, {
+            ORDER_ATOMIC: api.ORDER_ATOMIC,
+            ORDER_FUNCTION_CALL: api.ORDER_FUNCTION_CALL,
+            ORDER_NONE: api.ORDER_NONE,
+            ORDER_ASSIGNMENT: api.ORDER_ASSIGNMENT,
+            ORDER_ADDITION: api.ORDER_ADDITION,
+            ORDER_SUBTRACTION: api.ORDER_SUBTRACTION,
+            ORDER_MULTIPLICATION: api.ORDER_MULTIPLICATION,
+            ORDER_DIVISION: api.ORDER_DIVISION,
+            ORDER_EXPONENTIATION: api.ORDER_EXPONENTIATION,
+            ORDER_RELATIONAL: api.ORDER_RELATIONAL,
+            ORDER_EQUALITY: api.ORDER_EQUALITY,
+            ORDER_LOGICAL_AND: api.ORDER_LOGICAL_AND,
+            ORDER_LOGICAL_OR: api.ORDER_LOGICAL_OR,
+            ORDER_LOGICAL_NOT: api.ORDER_LOGICAL_NOT
+          });
+        }
         return api[t](block);
       };
     }
@@ -398,9 +584,37 @@ Blockly.Python['controls_if'] = function(block) {
   return code + '\n';
 };
 
+// forBlock version for controls_if
+Blockly.Python.forBlock['controls_if'] = function(block, generator) {
+  const n = block.elseifCount_ + (block.elseCount_ ? 1 : 0);
+  let code = '';
+  for (let i = 0; i <= n; i++) {
+    if (i === 0) {
+      const cond = generator.valueToCode(block, 'IF' + i, generator.ORDER_NONE || 99) || 'False';
+      const branch = generator.statementToCode(block, 'DO' + i);
+      code += 'if ' + cond + ':\n' + branch;
+    } else if (i === n && block.elseCount_) {
+      const branch = generator.statementToCode(block, 'ELSE');
+      code += 'else:\n' + branch;
+    } else {
+      const cond = generator.valueToCode(block, 'IF' + i, generator.ORDER_NONE || 99) || 'False';
+      const branch = generator.statementToCode(block, 'DO' + i);
+      code += 'elif ' + cond + ':\n' + branch;
+    }
+  }
+  return code + '\n';
+};
+
 Blockly.Python['controls_repeat_ext'] = function(block) {
   const times = Blockly.Python.valueToCode(block, 'TIMES', Blockly.Python.ORDER_ASSIGNMENT) || '0';
   const branch = Blockly.Python.statementToCode(block, 'DO');
+  return 'for i in range(' + times + '):\n' + branch + '\n';
+};
+
+// forBlock version for controls_repeat_ext
+Blockly.Python.forBlock['controls_repeat_ext'] = function(block, generator) {
+  const times = generator.valueToCode(block, 'TIMES', generator.ORDER_ASSIGNMENT || 1) || '0';
+  const branch = generator.statementToCode(block, 'DO');
   return 'for i in range(' + times + '):\n' + branch + '\n';
 };
 
@@ -415,10 +629,28 @@ Blockly.Python['controls_whileUntil'] = function(block) {
   }
 };
 
+// forBlock version for controls_whileUntil
+Blockly.Python.forBlock['controls_whileUntil'] = function(block, generator) {
+  const mode = block.getFieldValue('MODE');
+  const cond = generator.valueToCode(block, 'BOOL', generator.ORDER_NONE || 99) || 'False';
+  const branch = generator.statementToCode(block, 'DO');
+  if (mode === 'WHILE') {
+    return 'while ' + cond + ':\n' + branch + '\n';
+  } else {
+    return 'while True:\n' + branch + '  if not ' + cond + ':\n    break\n';
+  }
+};
+
 // Math blocks
 Blockly.Python['math_number'] = function(block) {
   const number = block.getFieldValue('NUM');
   return [number, Blockly.Python.ORDER_ATOMIC];
+};
+
+// forBlock version for math_number
+Blockly.Python.forBlock['math_number'] = function(block, generator) {
+  const number = block.getFieldValue('NUM');
+  return [number, generator.ORDER_ATOMIC || 0];
 };
 
 Blockly.Python['math_arithmetic'] = function(block) {
@@ -434,6 +666,23 @@ Blockly.Python['math_arithmetic'] = function(block) {
   const order = tuple[1];
   const left = Blockly.Python.valueToCode(block, 'A', order) || '0';
   const right = Blockly.Python.valueToCode(block, 'B', order) || '0';
+  return [left + operator + right, order];
+};
+
+// forBlock version for math_arithmetic
+Blockly.Python.forBlock['math_arithmetic'] = function(block, generator) {
+  const OPERATORS = {
+    'ADD': [' + ', generator.ORDER_ADDITION || 2],
+    'MINUS': [' - ', generator.ORDER_SUBTRACTION || 2],
+    'MULTIPLY': [' * ', generator.ORDER_MULTIPLICATION || 3],
+    'DIVIDE': [' / ', generator.ORDER_DIVISION || 3],
+    'POWER': [' ** ', generator.ORDER_EXPONENTIATION || 4]
+  };
+  const tuple = OPERATORS[block.getFieldValue('OP')];
+  const operator = tuple[0];
+  const order = tuple[1];
+  const left = generator.valueToCode(block, 'A', order) || '0';
+  const right = generator.valueToCode(block, 'B', order) || '0';
   return [left + operator + right, order];
 };
 
@@ -455,6 +704,24 @@ Blockly.Python['logic_compare'] = function(block) {
   return [left + operator + right, order];
 };
 
+// forBlock version for logic_compare
+Blockly.Python.forBlock['logic_compare'] = function(block, generator) {
+  const OPERATORS = {
+    'EQ': [' == ', generator.ORDER_EQUALITY || 6],
+    'NEQ': [' != ', generator.ORDER_EQUALITY || 6],
+    'LT': [' < ', generator.ORDER_RELATIONAL || 5],
+    'LTE': [' <= ', generator.ORDER_RELATIONAL || 5],
+    'GT': [' > ', generator.ORDER_RELATIONAL || 5],
+    'GTE': [' >= ', generator.ORDER_RELATIONAL || 5]
+  };
+  const tuple = OPERATORS[block.getFieldValue('OP')];
+  const operator = tuple[0];
+  const order = tuple[1];
+  const left = generator.valueToCode(block, 'A', order) || '0';
+  const right = generator.valueToCode(block, 'B', order) || '0';
+  return [left + operator + right, order];
+};
+
 Blockly.Python['logic_operation'] = function(block) {
   const OPERATORS = {
     'AND': [' and ', Blockly.Python.ORDER_LOGICAL_AND],
@@ -468,13 +735,40 @@ Blockly.Python['logic_operation'] = function(block) {
   return [left + operator + right, order];
 };
 
+// forBlock version for logic_operation
+Blockly.Python.forBlock['logic_operation'] = function(block, generator) {
+  const OPERATORS = {
+    'AND': [' and ', generator.ORDER_LOGICAL_AND || 7],
+    'OR': [' or ', generator.ORDER_LOGICAL_OR || 8]
+  };
+  const tuple = OPERATORS[block.getFieldValue('OP')];
+  const operator = tuple[0];
+  const order = tuple[1];
+  const left = generator.valueToCode(block, 'A', order) || (operator === ' and ' ? 'True' : 'False');
+  const right = generator.valueToCode(block, 'B', order) || (operator === ' and ' ? 'True' : 'False');
+  return [left + operator + right, order];
+};
+
 Blockly.Python['logic_negate'] = function(block) {
   const order = Blockly.Python.ORDER_LOGICAL_NOT;
   const value = Blockly.Python.valueToCode(block, 'BOOL', order) || 'True';
   return ['not ' + value, order];
 };
 
+// forBlock version for logic_negate
+Blockly.Python.forBlock['logic_negate'] = function(block, generator) {
+  const order = generator.ORDER_LOGICAL_NOT || 9;
+  const value = generator.valueToCode(block, 'BOOL', order) || 'True';
+  return ['not ' + value, order];
+};
+
 Blockly.Python['logic_boolean'] = function(block) {
   const value = block.getFieldValue('BOOL');
   return [value, Blockly.Python.ORDER_ATOMIC];
+};
+
+// forBlock version for logic_boolean
+Blockly.Python.forBlock['logic_boolean'] = function(block, generator) {
+  const value = block.getFieldValue('BOOL');
+  return [value, generator.ORDER_ATOMIC || 0];
 };

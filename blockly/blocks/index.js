@@ -116,10 +116,24 @@ Blockly.defineBlocksWithJsonArray([
   },
   {
     "type": "color_sensor",
-    "message0": "read Color sensor",
+    "message0": "read Color sensor %1",
+    "args0": [
+      {
+        "type": "field_dropdown",
+        "name": "COLOR",
+        "options": [
+          ["red", "red"],
+          ["green", "green"],
+          ["blue", "blue"],
+          ["yellow", "yellow"],
+          ["black", "black"],
+          ["white", "white"]
+        ]
+      }
+    ],
     "output": "String",
     "colour": 120,
-    "tooltip": "Read Color sensor value",
+    "tooltip": "Read Color sensor value with predefined color options",
     "helpUrl": ""
   },
   
@@ -320,7 +334,6 @@ function scrollTextOnOLED(text, direction, speed) {
   // This would create scrolling animation on OLED
 }
 
-// JavaScript generators are now defined in separate files
 
 // Extra blocks used by toolbox
 Blockly.Blocks['time_delay'] = {
@@ -332,7 +345,6 @@ Blockly.Blocks['time_delay'] = {
     this.setColour(195);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_if'] = {
   init: function() {
@@ -343,7 +355,6 @@ Blockly.Blocks['enhanced_if'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_compare'] = {
   init: function() {
@@ -355,7 +366,6 @@ Blockly.Blocks['enhanced_compare'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 Blockly.Blocks['enhanced_logic'] = {
   init: function() {
@@ -367,7 +377,6 @@ Blockly.Blocks['enhanced_logic'] = {
     this.setColour(210);
   }
 };
-// JavaScript generator moved to separate file
 
 // Simple OLED show block used by toolbox
 Blockly.Blocks['oled_show'] = {
@@ -399,13 +408,7 @@ Blockly.Blocks['oled_show_color'] = {
     this.setHelpUrl('');
   }
 };
-// JavaScript generator moved to separate file
 
-
-
-// -----------------------------
-// Extra blocks needed by toolbox
-// -----------------------------
 
 // My Program container block
 if (!Blockly.Blocks['my_program']) {
@@ -470,16 +473,33 @@ if (!Blockly.Blocks['bluetooth_send']) {
 
 if (!Blockly.Blocks['bluetooth_available']) {
   Blockly.Blocks['bluetooth_available'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth data available?'); this.setOutput(true,'Boolean'); this.setColour(290);} };
-  // JavaScript generator moved to separate file
 }
 
 if (!Blockly.Blocks['bluetooth_read']) {
   Blockly.Blocks['bluetooth_read'] = { init: function(){ this.appendDummyInput().appendField('Bluetooth read string'); this.setOutput(true,'String'); this.setColour(290);} };
 }
 
-// ========================================
-// NEW MISSING BLOCKS ACCORDING TO DOCUMENT
-// ========================================
+if (!Blockly.Blocks['bluetooth_is_connected']) {
+  Blockly.Blocks['bluetooth_is_connected'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Bluetooth is connected?');
+      this.setOutput(true, 'Boolean');
+      this.setColour(290);
+      this.setTooltip('Check if Bluetooth device is connected');
+    }
+  };
+}
+
+if (!Blockly.Blocks['bluetooth_get_status']) {
+  Blockly.Blocks['bluetooth_get_status'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Bluetooth connection status');
+      this.setOutput(true, 'String');
+      this.setColour(290);
+      this.setTooltip('Get Bluetooth connection status (Connected/Disconnected)');
+    }
+  };
+}
 
 // 1. PIN MODE CONFIGURATION
 if (!Blockly.Blocks['pin_mode']) {
@@ -551,6 +571,20 @@ if (!Blockly.Blocks['motor_speed']) {
   };
 }
 
+// 4b. SERVO ANGLE CONTROL (SIMPLIFIED)
+if (!Blockly.Blocks['servo_angle']) {
+  Blockly.Blocks['servo_angle'] = {
+    init: function() {
+      this.appendDummyInput().appendField('Set servo angle to')
+        .appendField(new Blockly.FieldNumber(90, 0, 180), 'ANGLE');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(20);
+      this.setTooltip('Set servo motor angle (0-180 degrees)');
+    }
+  };
+}
+
 // 5. IR SENSOR ANALOG READ
 if (!Blockly.Blocks['ir_sensor_analog']) {
   Blockly.Blocks['ir_sensor_analog'] = {
@@ -602,6 +636,40 @@ if (!Blockly.Blocks['wifi_receive']) {
       this.setOutput(true, 'String');
       this.setColour(290);
       this.setTooltip('Receive data over WiFi');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_is_connected']) {
+  Blockly.Blocks['wifi_is_connected'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi is connected?');
+      this.setOutput(true, 'Boolean');
+      this.setColour(290);
+      this.setTooltip('Check if WiFi is connected');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_get_ip']) {
+  Blockly.Blocks['wifi_get_ip'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi get IP address');
+      this.setOutput(true, 'String');
+      this.setColour(290);
+      this.setTooltip('Get WiFi IP address');
+    }
+  };
+}
+
+if (!Blockly.Blocks['wifi_disconnect']) {
+  Blockly.Blocks['wifi_disconnect'] = {
+    init: function() {
+      this.appendDummyInput().appendField('WiFi disconnect');
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(290);
+      this.setTooltip('Disconnect from WiFi network');
     }
   };
 }
@@ -834,10 +902,24 @@ if (!Blockly.Blocks['oled_animation_scroll']) {
   },
   {
     "type": "color_sensor",
-    "message0": "read Color sensor",
+    "message0": "read Color sensor %1",
+    "args0": [
+      {
+        "type": "field_dropdown",
+        "name": "COLOR",
+        "options": [
+          ["red", "red"],
+          ["green", "green"],
+          ["blue", "blue"],
+          ["yellow", "yellow"],
+          ["black", "black"],
+          ["white", "white"]
+        ]
+      }
+    ],
     "output": "String",
     "colour": 120,
-    "tooltip": "Read Color sensor value",
+    "tooltip": "Read Color sensor value with predefined color options",
     "helpUrl": ""
   },
   

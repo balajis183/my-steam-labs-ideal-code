@@ -12,12 +12,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   compileJavaScript: (code) => ipcRenderer.invoke('compile-javascript', code),
   compileCpp: (code) => ipcRenderer.invoke('compile-cpp', code),
   compileC: (code) => ipcRenderer.invoke('compile-c', code),
+  // Python formatting (black)
+  formatPython: (code) => ipcRenderer.invoke('format-python', code),
   
   // Multi-Language Upload Functions
-  uploadPython: (code, port) => ipcRenderer.invoke('upload-python', code, port),
-  uploadJavaScript: (code, port) => ipcRenderer.invoke('upload-javascript', code, port),
-  uploadCpp: (code, port) => ipcRenderer.invoke('upload-cpp', code, port),
-  uploadC: (code, port) => ipcRenderer.invoke('upload-c', code, port),
+  uploadPython: (code, port, boardType) => ipcRenderer.invoke('upload-python', code, port, boardType),
+  uploadJavaScript: (code, port, boardType) => ipcRenderer.invoke('upload-javascript', code, port, boardType),
+  uploadCpp: (code, port, boardType) => ipcRenderer.invoke('upload-cpp', code, port, boardType),
+  uploadC: (code, port, boardType) => ipcRenderer.invoke('upload-c', code, port, boardType),
   
   // Multi-Language Run Functions
   runPython: (code, port) => ipcRenderer.invoke('run-python', code, port),
@@ -34,14 +36,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Board Status
   checkBoard: () => ipcRenderer.invoke('check-board'),
   
+  // Firmware Detection
+  detectFirmware: (port) => ipcRenderer.invoke('detect-firmware', port),
+  
   // ESP32 Connection Test
   testEsp32Connection: (port) => ipcRenderer.invoke('test-esp32-connection', port),
+  
+  // Serial Monitor: Send data
+  sendSerialData: (port, data) => ipcRenderer.invoke('send-serial-data', port, data),
   
   // MicroPython Installation
   installMicroPython: (port) => ipcRenderer.invoke('install-micropython', port),
   
   // Terminal Output
   terminalOutput: (message) => ipcRenderer.invoke('terminal-output', message),
+  
+  // Chatbot API
+  chatbotGenerateCode: (question) => ipcRenderer.invoke('chatbot-generate-code', question),
+  chatbotPing: () => ipcRenderer.invoke('chatbot-ping'),
   
   // Event Listeners
   onSerialData: (callback) => {
