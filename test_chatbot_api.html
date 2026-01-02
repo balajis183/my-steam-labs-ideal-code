@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chatbot API Test</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #5A59FF;
+      margin-bottom: 10px;
+    }
+    .status {
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    .status.info {
+      background: #E3F2FD;
+      color: #1976D2;
+      border-left: 4px solid #1976D2;
+    }
+    .status.success {
+      background: #E8F5E9;
+      color: #388E3C;
+      border-left: 4px solid #388E3C;
+    }
+    .status.error {
+      background: #FFEBEE;
+      color: #D32F2F;
+      border-left: 4px solid #D32F2F;
+    }
+    button {
+      background: #5A59FF;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #4A49DF;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .test-input {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+      margin: 10px 0;
+      box-sizing: border-box;
+    }
+    .test-input:focus {
+      outline: none;
+      border-color: #5A59FF;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🔥 Chatbot API Connection Test</h1>
+    <p>This page tests the SambaNova AI API connection</p>
+
+    <div id="status" class="status info">
+      ⏳ Ready to test...
+    </div>
+
+    <h3>Test 1: API Configuration</h3>
+    <button onclick="testConfig()">Check API Config</button>
+    <div id="config-result"></div>
+
+    <h3>Test 2: Simple API Call</h3>
+    <input 
+      type="text" 
+      id="test-question" 
+      class="test-input" 
+      placeholder="Enter a question (e.g., 'How to read temperature from ADC?')"
+      value="How to read temperature from ADC?"
+    />
+    <button onclick="testAPI()" id="test-btn">Send Test Request</button>
+    <div id="api-result"></div>
+
+    <h3>Test 3: Browser Console</h3>
+    <p>Press <strong>F12</strong> to open Developer Tools and check the Console tab for detailed logs.</p>
+  </div>
+
+  <script>
+    // Import the chatbot config
+    const CHATBOT_CONFIG = {
+      API_KEY: "9d06bc2c-7d40-42d4-9fac-8a1d3d3f9a54",
+      API_URL: "https://api.sambanova.ai/v1/chat/completions",
+      MODEL_NAME: "Llama-3.3-Swallow-70B-Instruct-v0.4",
+      TEMPERATURE: 0.2,
+      MAX_TOKENS: 600,
+      BASE_SYSTEM_PROMPT: `You generate ONLY executable MicroPython code for ESP32.
+No explanations.
+No markdown.
+No triple backticks.
+Use only valid MicroPython libraries.
+Code must run directly on ESP32.`
+    };
+
+    function testConfig() {
+      console.log('🔧 Testing API Configuration...');
+      const configResult = document.getElementById('config-result');
+      
+      const checks = [
+        { name: 'API Key', value: CHATBOT_CONFIG.API_KEY, valid: CHATBOT_CONFIG.API_KEY && CHATBOT_CONFIG.API_KEY.length > 0 },
+        { name: 'API URL', value: CHATBOT_CONFIG.API_URL, valid: CHATBOT_CONFIG.API_URL && CHATBOT_CONFIG.API_URL.startsWith('https://') },
+        { name: 'Model Name', value: CHATBOT_CONFIG.MODEL_NAME, valid: CHATBOT_CONFIG.MODEL_NAME && CHATBOT_CONFIG.MODEL_NAME.length > 0 }
+      ];
+
+      let html = '<div style="margin-top: 10px;">';
+      let allValid = true;
+
+      checks.forEach(check => {
+        const icon = check.valid ? '✅' : '❌';
+        const color = check.valid ? '#388E3C' : '#D32F2F';
+        html += `<div style="padding: 8px; margin: 5px 0; background: #f9f9f9; border-left: 4px solid ${color};">
+          ${icon} <strong>${check.name}:</strong> ${check.value ? check.value.substring(0, 50) + (check.value.length > 50 ? '...' : '') : 'NOT SET'}
+        </div>`;
+        if (!check.valid) allValid = false;
+      });
+
+      html += '</div>';
+      configResult.innerHTML = html;
+
+      const status = document.getElementById('status');
+      if (allValid) {
+        status.className = 'status success';
+        status.textContent = '✅ Configuration is valid! API key and URL are set correctly.';
+        console.log('✅ Configuration valid');
+      } else {
+        status.className = 'status error';
+        status.textContent = '❌ Configuration error! Check API key and URL.';
+        console.error('❌ Configuration invalid');
+      }
+    }
+
+    async function testAPI() {
+      console.log('📡 Testing API Connection...');
+      const status = document.getElementById('status');
+      const apiResult = document.getElementById('api-result');
+      const testBtn = document.getElementById('test-btn');
+      const questionInput = document.getElementById('test-question');
+      
+      const question = questionInput.value.trim();
+      if (!question) {
+        alert('Please enter a question!');
+        return;
+      }
+
+      // Disable button
+      testBtn.disabled = true;
+      testBtn.textContent = '⏳ Testing...';
+
+      status.className = 'status info';
+      status.textContent = '⏳ Sending request to SambaNova API...';
+      apiResult.innerHTML = '';
+
+      try {
+        console.log('📤 Sending request:', {
+          url: CHATBOT_CONFIG.API_URL,
+          model: CHATBOT_CONFIG.MODEL_NAME,
+          question: question
+        });
+
+        const payload = {
+          model: CHATBOT_CONFIG.MODEL_NAME,
+          messages: [
+            { role: "system", content: CHATBOT_CONFIG.BASE_SYSTEM_PROMPT },
+            { role: "user", content: question }
+          ],
+          temperature: CHATBOT_CONFIG.TEMPERATURE,
+          max_tokens: CHATBOT_CONFIG.MAX_TOKENS
+        };
+
+        console.log('📦 Payload:', payload);
+
+        const response = await fetch(CHATBOT_CONFIG.API_URL, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${CHATBOT_CONFIG.API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        console.log('📥 Response status:', response.status);
+        console.log('📥 Response headers:', response.headers);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ API Error:', errorText);
+          
+          throw new Error(`API Error: ${response.status} ${response.statusText}\n\n${errorText}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ API Response:', data);
+
+        let code = data.choices[0].message.content;
+        code = code.replace(/```python\n?/g, '').replace(/```\n?/g, '').trim();
+
+        status.className = 'status success';
+        status.textContent = '✅ API connection successful! Code generated.';
+
+        apiResult.innerHTML = `
+          <div style="margin-top: 15px;">
+            <strong>Generated Code:</strong>
+            <pre>${escapeHtml(code)}</pre>
+          </div>
+        `;
+
+        console.log('✅ Test completed successfully');
+
+      } catch (error) {
+        console.error('❌ Test failed:', error);
+        
+        status.className = 'status error';
+        status.textContent = `❌ Error: ${error.message}`;
+
+        apiResult.innerHTML = `
+          <div style="margin-top: 15px; padding: 15px; background: #FFEBEE; border-left: 4px solid #D32F2F; border-radius: 6px;">
+            <strong>Error Details:</strong><br>
+            ${escapeHtml(error.message)}
+            <br><br>
+            <strong>Possible Issues:</strong>
+            <ul>
+              <li>Check your internet connection</li>
+              <li>Verify API key is correct</li>
+              <li>Check browser console (F12) for CORS errors</li>
+              <li>Ensure API endpoint is accessible</li>
+            </ul>
+          </div>
+        `;
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Send Test Request';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Auto-run config test on load
+    window.addEventListener('load', () => {
+      console.log('🚀 Chatbot API Test Page Loaded');
+      testConfig();
+    });
+  </script>
+</body>
+</html>
+

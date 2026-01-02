@@ -195,6 +195,7 @@
     <script src="../scripts/hardware_adapter.js"></script>
     <link rel="stylesheet" href="../styles/style.css" />
     <link rel="stylesheet" href="../styles/index.css" />
+    <link rel="stylesheet" href="../styles/chatbot.css" />
   </head>
 
   <body>
@@ -220,7 +221,64 @@
       <div id="main">
         <div id="blocklyDiv"></div>
         <div id="codeArea">
-          <iframe id="monacoEditor" src="./monaco.html"></iframe>
+          <!-- Tabbed Interface -->
+          <div class="code-area-tabs">
+            <button class="tab-button active" data-tab="editor" onclick="switchToTab('editor')">
+              Code Editor
+            </button>
+            <button class="tab-button" data-tab="chatbot" onclick="switchToTab('chatbot')">
+              💬 Chatbot
+            </button>
+          </div>
+          
+          <!-- Code Editor Tab Content -->
+          <div id="editor-tab" class="tab-content active">
+            <iframe id="monacoEditor" src="./monaco.html"></iframe>
+          </div>
+          
+          <!-- Chatbot Tab Content -->
+          <div id="chatbot-tab" class="tab-content">
+            <div class="chatbot-container">
+              <!-- Welcome Header -->
+              <div class="chatbot-header">
+                <div class="chatbot-title">
+                  🔥 <strong>ESP32 MicroPython CodeBot Ready</strong>
+                </div>
+                <button class="chatbot-clear-btn" onclick="clearChatHistory()" title="Clear chat">
+                  🗑️
+                </button>
+              </div>
+              
+              <!-- Chat Messages Area -->
+              <div id="chatbot-messages" class="chatbot-messages">
+                <!-- Messages will be added here dynamically -->
+              </div>
+              
+              <!-- Chat Input Area -->
+              <div class="chatbot-input-area">
+                <input 
+                  type="text" 
+                  id="chatbot-input" 
+                  class="chatbot-input" 
+                  placeholder="Ask: How to read temperature from ADC?"
+                  onkeydown="handleChatbotEnter(event)"
+                />
+                <button 
+                  id="chatbot-send-btn" 
+                  class="chatbot-send-btn" 
+                  onclick="sendChatbotMessage()"
+                  title="Send message"
+                >
+                  ➤
+                </button>
+              </div>
+              
+              <!-- Example Questions -->
+              <div class="chatbot-examples">
+                💡 Press Enter or click the button to send
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -361,7 +419,8 @@
     </xml>
 
     <script src="../scripts/blockly_page.js"></script>
-
+    <script src="../../config/chatbot.config.js"></script>
+    <script src="../scripts/chatbot.js"></script>
     <script src="../scripts/renderer.js"></script>
   </body>
 </html>

@@ -455,10 +455,36 @@ function loadBlocksXML() {
   input.click();
 }
 
+// Tab Switching Function
+function switchToTab(tabName) {
+  // Get all tab buttons and contents
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  // Remove active class from all tabs
+  tabButtons.forEach(btn => btn.classList.remove('active'));
+  tabContents.forEach(content => content.classList.remove('active'));
+  
+  // Add active class to selected tab
+  const selectedButton = document.querySelector(`[data-tab="${tabName}"]`);
+  const selectedContent = document.getElementById(`${tabName}-tab`);
+  
+  if (selectedButton) selectedButton.classList.add('active');
+  if (selectedContent) selectedContent.classList.add('active');
+  
+  // Resize Blockly workspace when switching tabs
+  if (typeof Blockly !== 'undefined' && workspace) {
+    setTimeout(() => Blockly.svgResize(workspace), 100);
+  }
+}
+
 window.toggleTerminal = toggleTerminal;
 window.clearTerminal = clearTerminal;
 window.saveBlocksXML = saveBlocksXML;
 window.loadBlocksXML = loadBlocksXML;
+// Export functions to global scope for chatbot integration
+window.switchToTab = switchToTab;
+window.sendCodeToMonaco = sendCodeToMonaco;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupTerminalResize();
