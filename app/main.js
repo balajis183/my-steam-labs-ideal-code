@@ -57,8 +57,30 @@ function detectBoardType(portInfo) {
   return 'unknown';
 }
 
+// Cache for firmware detection to avoid multiple simultaneous checks
+const firmwareDetectionCache = new Map();
+const firmwareDetectionInProgress = new Set();
+
 // Utility: detect what firmware is on the board
 async function detectFirmwareType(portPath) {
+  // Check cache first (valid for 10 seconds)
+  const cached = firmwareDetectionCache.get(portPath);
+  if (cached && (Date.now() - cached.timestamp < 10000)) {
+    return cached.result;
+  }
+  
+  // Check if detection is already in progress for this port
+  if (firmwareDetectionInProgress.has(portPath)) {
+    // Wait a bit and return cached result or unknown
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const stillCached = firmwareDetectionCache.get(portPath);
+    if (stillCached) return stillCached.result;
+    return { type: 'unknown', compatible: false, error: 'Detection in progress' };
+  }
+  
+  // Mark as in progress
+  firmwareDetectionInProgress.add(portPath);
+  
   try {
     console.log(`🔍 Detecting firmware type on ${portPath}...`);
     
@@ -87,15 +109,36 @@ async function detectFirmwareType(portPath) {
     });
     
     console.log(`✅ Firmware detection result:`, result);
+    
+    // Cache the result
+    firmwareDetectionCache.set(portPath, {
+      result: result,
+      timestamp: Date.now()
+    });
+    
+    // Remove from in-progress
+    firmwareDetectionInProgress.delete(portPath);
+    
     return result;
     
   } catch (error) {
     console.error('❌ Firmware detection error:', error);
-    return { 
+    const errorResult = { 
       type: 'unknown', 
       compatible: false, 
       error: error.message 
     };
+    
+    // Cache error result too (for 5 seconds only)
+    firmwareDetectionCache.set(portPath, {
+      result: errorResult,
+      timestamp: Date.now() - 5000 // Shorter cache for errors
+    });
+    
+    // Remove from in-progress
+    firmwareDetectionInProgress.delete(portPath);
+    
+    return errorResult;
   }
 }
 
@@ -193,14 +236,21 @@ async function hardwareResetESP32(portPath) {
                     console.log(`⚠️ Reset step 3 failed: ${err3.message}`);
                   }
                   
+
                   setTimeout(() => {
-                    p.close(() => {
-                      try { p.destroy(); } catch {}
-                      console.log('✅ Hardware reset complete (Arduino IDE style)');
-                      // Wait for Windows to release port before resolving
-                      setTimeout(() => resolve(true), 500);
+                    // Send interrupt signals while port is still open
+                    const interruptPayload = Buffer.from([0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03]); // 8x Ctrl+C
+                    p.write(interruptPayload, () => {
+                      setTimeout(() => {
+                        p.close(() => {
+                          try { p.destroy(); } catch {}
+                          console.log('✅ Hardware reset complete with interrupt signals sent');
+                          // Wait for Windows to release port before resolving
+                          setTimeout(() => resolve(true), 800);
+                        });
+                      }, 400);  // Give time for interrupt signals to process
                     });
-                  }, 250);  // Wait for ESP32 to start booting
+                  }, 200);  // Wait brief moment for ESP32 to boot into REPL, then interrupt
                 });
               }, 100);  // Hold reset for 100ms
             });
@@ -224,9 +274,7 @@ async function pokeRawRepl(portPath) {
           console.log(`Warning: pokeRawRepl open failed: ${err.message}`);
           return resolve();
         }
-        // Send MULTIPLE Ctrl+C to interrupt running code, then Ctrl+D to soft reset
-        // This is more aggressive than before (6 interrupts instead of 2)
-        const payload = Buffer.from([0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x04]); // 6x ctrl-C + ctrl-D
+        const payload = Buffer.from([0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x04]);
         p.write(payload, () => {
           setTimeout(() => {
             p.close(() => {
@@ -1032,7 +1080,7 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         
         // CRITICAL: Release port FIRST before any mpremote operations
         await releaseComPortIfNeeded(port);
-        await delay(1000); // Increased delay after port release
+        await delay(2000); // Extra time for Windows to fully release the port
         
         // Board-specific reset logic
         const isESP32 = boardType === 'esp32';
@@ -1041,10 +1089,10 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
           // ESP32-specific aggressive hardware reset (like Arduino IDE)
           safeSend('terminal-output', '[INFO] Resetting ESP32 board...');
           const resetSuccess = await hardwareResetESP32(port);
-          // hardwareResetESP32 now includes delay for port release
+          // hardwareResetESP32 now includes delay AND interrupt signals
           if (resetSuccess) {
             safeSend('terminal-output', '[SUCCESS] Board reset complete. Waiting for boot...');
-            await delay(3000);  // Wait for ESP32 to fully boot MicroPython (longer delay!)
+            await delay(2500);  // Wait for ESP32 to fully boot MicroPython and process interrupts
           } else {
             safeSend('terminal-output', '[WARNING] Hardware reset incomplete, trying software reset...');
             await delay(1500);
@@ -1060,152 +1108,91 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         // Send interrupt signals to stop any running code
         safeSend('terminal-output', '[INFO] Stopping any running programs...');
         await pokeRawRepl(port);
-        // pokeRawRepl now includes delay for port release
-        await delay(800);  // Additional delay
+        await delay(2500); // Increased significantly - Give time for interrupts to take effect
         
-        // CRITICAL FIX: Upload a BLANK main.py FIRST to stop old code from running
-        // This is the key difference from Arduino IDE - we need to erase old code first
-        safeSend('terminal-output', `[INFO] Clearing previous code from board...`);
-        const blankCode = 'pass\n'; // Minimal Python code that does nothing
-        const blankTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blank-upload-'));
-        const blankPyPath = path.join(blankTmpDir, 'main.py');
-        fs.writeFileSync(blankPyPath, blankCode, 'utf-8');
-        
-        // Upload blank main.py with retry logic
-        const blankCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${blankPyPath.replace(/\\/g, '/')}" :main.py`;
-        let blankResult = await captureSerialOutput(port, blankCmd, 20000);
-        
-        // Retry logic - more aggressive for ESP32, gentler for others
-        if (!blankResult.success && (blankResult.error || '').includes('could not enter raw repl')) {
-          safeSend('terminal-output', '⚠️ Retrying to clear old code (attempt 1/3)...');
-          await hardResetPort(port);
-          // hardResetPort includes delay, but add extra for retry
-          await delay(1000);
-          await pokeRawRepl(port);
-          // pokeRawRepl includes delay, but add extra for retry
-          await delay(800);
-          blankResult = await captureSerialOutput(port, blankCmd, 20000);
-        }
-        
-        // Level 2: More aggressive retry (ESP32-specific hardware reset only for ESP32)
-        if (!blankResult.success) {
-          if (isESP32) {
-            safeSend('terminal-output', '⚠️ Retrying with ESP32 hardware reset (attempt 2/3)...');
-            await hardwareResetESP32(port);  // ESP32-specific hardware reset (includes delay)
-            await delay(2000); // Additional delay after reset
-          } else {
-            safeSend('terminal-output', '⚠️ Retrying with soft reset (attempt 2/3)...');
-            await hardResetPort(port); // Includes delay
-            await delay(1000); // Additional delay
-          }
-          await pokeRawRepl(port); // Includes delay
-          await delay(800); // Additional delay
-          blankResult = await captureSerialOutput(port, blankCmd, 25000);
-        }
-        
-        // Level 3: Emergency reset (ESP32-specific bootloader mode only for ESP32)
-        if (!blankResult.success) {
-          if (isESP32) {
-            safeSend('terminal-output', '🚨 ESP32 Emergency bootloader reset (attempt 3/3)...');
-            await emergencyResetToBootloader(port); // Includes delay
-            await delay(2000); // Bootloader needs more time
-            await hardwareResetESP32(port);  // Hardware reset after bootloader (includes delay)
-            await delay(2000); // Additional delay
-          } else {
-            safeSend('terminal-output', '⚠️ Final retry attempt (3/3)...');
-            await hardResetPort(port); // Includes delay
-            await delay(1500); // Additional delay
-          }
-          await pokeRawRepl(port); // Includes delay
-          await delay(800); // Additional delay
-          blankResult = await captureSerialOutput(port, blankCmd, 30000);
-        }
-        
-        if (blankResult.success) {
-          safeSend('terminal-output', '[SUCCESS] Previous code cleared');
-          // Reset to run the blank code, stopping any previous loops
-          await hardResetPort(port);
-          await delay(1500); // Let blank code run (which does nothing)
-        } else {
-          // Even after 3 retries, board is stuck
-          const errorHelp = isESP32 ? `
-❌ Could not clear old code after 3 attempts (including emergency bootloader reset).
-
-🔧 The ESP32 is stuck in a loop. Try these steps IN ORDER:
-
-1️⃣ PHYSICAL RESET (Recommended - Try this first):
-   - Hold the BOOT button on ESP32
-   - While holding BOOT, press and release RESET button
-   - Release BOOT button
-   - ESP32 should now be in bootloader mode
-   - Try uploading again immediately
-
-2️⃣ USB POWER CYCLE:
-   - Unplug the USB cable completely
-   - Wait 5 seconds
-   - Plug USB back in
-   - Try uploading immediately
-
-3️⃣ REFLASH FIRMWARE (Last resort):
-   - Click "Flash MicroPython" button in toolbar
-   - This will erase ALL code and reinstall MicroPython
-   - Then try uploading your program again
-
-💡 If Arduino IDE works but this app doesn't, the ESP32 likely has
-   code running that blocks mpremote. Physical reset is fastest fix.
-` : `
-❌ Could not clear old code after 3 attempts.
-
-🔧 The ${boardType} board is not responding. Try these steps:
-
-1️⃣ PHYSICAL RESET:
-   - Press the RESET button on your ${boardType} board
-   - Wait 3 seconds
-   - Try uploading again immediately
-
-2️⃣ USB POWER CYCLE:
-   - Unplug the USB cable completely
-   - Wait 5 seconds
-   - Plug USB back in
-   - Try uploading immediately
-
-3️⃣ CHECK CONNECTION:
-   - Ensure the USB cable is properly connected
-   - Try a different USB port
-   - Make sure the board has MicroPython firmware installed
-
-💡 If you recently uploaded code that blocks the board, a physical reset should help.
-`;
-          safeSend('terminal-output', errorHelp);
-          res({ success: false, error: `${boardType} board stuck - physical reset required` });
-          return;
-        }
+        safeSend('terminal-output', `[INFO] Preparing to upload new code...`);
+        await delay(2000); // Increased for better stability
 
         // Upload with retry logic for "could not enter raw repl" error
         safeSend('terminal-output', `\n[UPLOAD] Transferring code to ${boardType}...`);
         
+        // Extra delay before library upload to ensure port is fully available
+        await delay(1500);
+        
         // Upload helper libraries if referenced in code
         const helpersNeeded = detectHelperFiles(code);
         for (const helper of helpersNeeded) {
+          let uploadSuccess = false;
+          let retryCount = 0;
+          const maxRetries = 2;
+          
+          // Optional: Check if library already exists (skip check if it fails)
+          let libraryExists = false;
           try {
-            safeSend('terminal-output', `[INFO] Installing library: ${helper.key}.py`);
-            // Extra reset and delay before each helper to avoid raw REPL issues
-            await hardResetPort(port);
-            await delay(800);
-            await pokeRawRepl(port);
-            
-            const uploadHelperCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${helper.path.replace(/\\/g, '/')}" :${helper.key}.py`;
-            const helperResult = await captureSerialOutput(port, uploadHelperCmd, 15000);
-            if (!helperResult.success) {
-              safeSend('terminal-output', `[WARNING] Failed to install ${helper.key}.py: ${helperResult.error || 'Unknown error'}`);
-            } else {
-              safeSend('terminal-output', `[SUCCESS] ${helper.key}.py installed`);
+            const checkCmd = `"${pythonPath}" -m mpremote connect ${port} fs ls :${helper.key}.py`;
+            const checkResult = await captureSerialOutput(port, checkCmd, 3000);
+            if (checkResult.success && checkResult.output && checkResult.output.includes(`${helper.key}.py`)) {
+              safeSend('terminal-output', `[INFO] ${helper.key}.py already exists, will update it...`);
+              libraryExists = true;
             }
-          } catch (helperErr) {
-            safeSend('terminal-output', `[WARNING] Error installing ${helper.key}.py: ${helperErr.message}`);
+          } catch (checkErr) {
+            // Ignore check errors, just proceed with upload
           }
+          
+          while (!uploadSuccess && retryCount <= maxRetries) {
+            try {
+              if (retryCount > 0) {
+                safeSend('terminal-output', `[INFO] Retrying library installation (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+                // Only reset on retry, not first attempt
+                await hardResetPort(port);
+                await delay(3500 + (retryCount * 1000));
+                await pokeRawRepl(port);
+                await delay(2000 + (retryCount * 500));
+              } else {
+                safeSend('terminal-output', `[INFO] Installing library: ${helper.key}.py`);
+                // First attempt: just poke, no reset (board was already reset before)
+                await pokeRawRepl(port);
+                await delay(1500);
+              }
+              
+              const uploadHelperCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${helper.path.replace(/\\/g, '/')}" :${helper.key}.py`;
+              const helperResult = await captureSerialOutput(port, uploadHelperCmd, 20000); // Increased timeout from 15s to 20s
+              
+              if (!helperResult.success) {
+                if (retryCount < maxRetries && helperResult.error.includes('could not enter raw repl')) {
+                  safeSend('terminal-output', `[WARNING] REPL entry failed, will retry...`);
+                  retryCount++;
+                  await delay(3000); // Wait before retry - increased from 1500ms
+                  continue;
+                } else {
+                  safeSend('terminal-output', `[WARNING] Failed to install ${helper.key}.py after ${maxRetries + 1} attempts`);
+                  safeSend('terminal-output', `[INFO] Continuing with main code upload (library may already exist from previous upload)...`);
+                  break; // Skip this library, continue with next or main code
+                }
+              } else {
+                safeSend('terminal-output', `[SUCCESS] ${helper.key}.py installed`);
+                uploadSuccess = true;
+              }
+            } catch (helperErr) {
+              if (retryCount < maxRetries && helperErr.message.includes('could not enter raw repl')) {
+                safeSend('terminal-output', `[WARNING] Error during upload, will retry...`);
+                retryCount++;
+                await delay(3000); // Wait before retry - increased from 1500ms
+                continue;
+              } else {
+                safeSend('terminal-output', `[WARNING] Error installing ${helper.key}.py: ${helperErr.message}`);
+                safeSend('terminal-output', `[INFO] Continuing with main code upload (library may already exist)...`);
+                break; // Skip this library, continue with next or main code
+              }
+            }
+            
+            if (uploadSuccess || retryCount > maxRetries) {
+              break;
+            }
+          }
+          
           // Longer gap between helper uploads
-          await delay(800);
+          await delay(2500); // Increased from 1500ms
         }
         
         // Deterministic, single-pass sequence (no parallel attempts)
@@ -1218,24 +1205,40 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         const fsCpCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
         let fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
         
-        // First retry
+        // First retry with AGGRESSIVE reset for ESP32
         if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
           safeSend('terminal-output', '[WARNING] Connection lost, retrying (1/2)...');
-          await hardResetPort(port); // Includes delay
-          await delay(1000); // Additional delay
-          await pokeRawRepl(port); // Includes delay
-          await delay(800); // Additional delay
-          fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
+          
+          if (isESP32) {
+            safeSend('terminal-output', '[INFO] Performing ESP32 hardware reset with interrupts...');
+            await hardwareResetESP32(port); // Includes interrupt signals
+            await delay(2500); // Let ESP32 boot and process interrupts
+          } else {
+            await hardResetPort(port);
+            await delay(1000);
+          }
+          
+          await pokeRawRepl(port);
+          await delay(1200);
+          fsResult = await captureSerialOutput(port, fsCpCmd, 25000);
         }
         
-        // Second retry
+        // Second retry with EVEN MORE aggressive timing
         if (!fsResult.success && (fsResult.error || '').includes('could not enter raw repl')) {
           safeSend('terminal-output', '[WARNING] Connection lost, retrying (2/2)...');
-          await hardResetPort(port); // Includes delay
-          await delay(1500); // Additional delay
-          await pokeRawRepl(port); // Includes delay
-          await delay(800); // Additional delay
-          fsResult = await captureSerialOutput(port, fsCpCmd, 25000); // Longer timeout
+          
+          if (isESP32) {
+            safeSend('terminal-output', '[INFO] Performing aggressive ESP32 reset...');
+            await hardwareResetESP32(port);
+            await delay(3500); // Even longer delay
+          } else {
+            await hardResetPort(port);
+            await delay(1500);
+          }
+          
+          await pokeRawRepl(port);
+          await delay(1500);
+          fsResult = await captureSerialOutput(port, fsCpCmd, 30000); // Longer timeout
         }
         if (!fsResult.success) {
           // Provide helpful error message with troubleshooting steps

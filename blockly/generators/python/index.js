@@ -113,7 +113,14 @@ Blockly.Python['oled_show'] = function(block) {
 Blockly.Python['oled_show_color'] = function(block) {
   var text = Blockly.Python.valueToCode(block, 'TEXT', Blockly.Python.ORDER_ATOMIC) || '""';
   var color = block.getFieldValue('COLOR');
-  return [`show_on_oled(${text}, 0, 0, "${color}")`, Blockly.Python.ORDER_FUNCTION_CALL];
+  return `show_on_oled(${text}, 0, 0, "${color}")\n`;
+};
+
+// forBlock version for oled_show_color
+Blockly.Python.forBlock['oled_show_color'] = function(block, generator) {
+  var text = generator.valueToCode(block, 'TEXT', generator.ORDER_ATOMIC || 0) || '""';
+  var color = block.getFieldValue('COLOR');
+  return `show_on_oled(${text}, 0, 0, "${color}")\n`;
 };
 
 Blockly.Python['oled_display_colored'] = function(block) {
@@ -182,9 +189,24 @@ Blockly.Python['wifi_connect'] = function(block) {
   return `wifi_connect("${ssid}", "${password}")\n`;
 };
 
+// forBlock version for wifi_connect  
+Blockly.Python.forBlock['wifi_connect'] = function(block, generator) {
+  var ssid = block.getFieldValue('SSID');
+  var password = block.getFieldValue('PASSWORD');
+  return `wifi_connect("${ssid}", "${password}")\n`;
+};
+
 // WiFi send
 Blockly.Python['wifi_send'] = function(block) {
   var data = Blockly.Python.valueToCode(block, 'DATA', Blockly.Python.ORDER_ATOMIC) || '""';
+  var ip = block.getFieldValue('IP');
+  var port = block.getFieldValue('PORT');
+  return `wifi_send(${data}, "${ip}", ${port})\n`;
+};
+
+// forBlock version for wifi_send
+Blockly.Python.forBlock['wifi_send'] = function(block, generator) {
+  var data = generator.valueToCode(block, 'DATA', generator.ORDER_ATOMIC || 0) || '""';
   var ip = block.getFieldValue('IP');
   var port = block.getFieldValue('PORT');
   return `wifi_send(${data}, "${ip}", ${port})\n`;
@@ -196,15 +218,36 @@ Blockly.Python['wifi_receive'] = function(block) {
   return [`wifi_receive(${port})`, Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
+// forBlock version for wifi_receive
+Blockly.Python.forBlock['wifi_receive'] = function(block, generator) {
+  var port = block.getFieldValue('PORT');
+  return [`wifi_receive(${port})`, generator.ORDER_FUNCTION_CALL || 1];
+};
+
 Blockly.Python['wifi_is_connected'] = function() {
   return ['wifi_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// forBlock version for wifi_is_connected
+Blockly.Python.forBlock['wifi_is_connected'] = function(block, generator) {
+  return ['wifi_is_connected()', generator.ORDER_FUNCTION_CALL || 1];
 };
 
 Blockly.Python['wifi_get_ip'] = function() {
   return ['wifi_get_ip()', Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
+// forBlock version for wifi_get_ip
+Blockly.Python.forBlock['wifi_get_ip'] = function(block, generator) {
+  return ['wifi_get_ip()', generator.ORDER_FUNCTION_CALL || 1];
+};
+
 Blockly.Python['wifi_disconnect'] = function() {
+  return 'wifi_disconnect()\n';
+};
+
+// forBlock version for wifi_disconnect
+Blockly.Python.forBlock['wifi_disconnect'] = function(block, generator) {
   return 'wifi_disconnect()\n';
 };
 
@@ -355,8 +398,20 @@ Blockly.Python['bluetooth_setup'] = function(block) {
   return `bluetooth_setup("${deviceName}")\n`;
 };
 
+// forBlock version for bluetooth_setup
+Blockly.Python.forBlock['bluetooth_setup'] = function(block, generator) {
+  var deviceName = block.getFieldValue('DEVICE_NAME');
+  return `bluetooth_setup("${deviceName}")\n`;
+};
+
 Blockly.Python['bluetooth_send'] = function(block) {
   var data = Blockly.Python.valueToCode(block, 'DATA', Blockly.Python.ORDER_ATOMIC) || '""';
+  return `bluetooth_send(${data})\n`;
+};
+
+// forBlock version for bluetooth_send
+Blockly.Python.forBlock['bluetooth_send'] = function(block, generator) {
+  var data = generator.valueToCode(block, 'DATA', generator.ORDER_ATOMIC || 0) || '""';
   return `bluetooth_send(${data})\n`;
 };
 
@@ -364,16 +419,36 @@ Blockly.Python['bluetooth_available'] = function() {
   return ['bluetooth_available()', Blockly.Python.ORDER_FUNCTION_CALL]; 
 };
 
+// forBlock version for bluetooth_available
+Blockly.Python.forBlock['bluetooth_available'] = function(block, generator) {
+  return ['bluetooth_available()', generator.ORDER_FUNCTION_CALL || 1];
+};
+
 Blockly.Python['bluetooth_read'] = function() { 
   return ['bluetooth_read()', Blockly.Python.ORDER_FUNCTION_CALL]; 
+};
+
+// forBlock version for bluetooth_read
+Blockly.Python.forBlock['bluetooth_read'] = function(block, generator) {
+  return ['bluetooth_read()', generator.ORDER_FUNCTION_CALL || 1];
 };
 
 Blockly.Python['bluetooth_is_connected'] = function() {
   return ['bluetooth_is_connected()', Blockly.Python.ORDER_FUNCTION_CALL];
 };
 
+// forBlock version for bluetooth_is_connected
+Blockly.Python.forBlock['bluetooth_is_connected'] = function(block, generator) {
+  return ['bluetooth_is_connected()', generator.ORDER_FUNCTION_CALL || 1];
+};
+
 Blockly.Python['bluetooth_get_status'] = function() {
   return ['bluetooth_get_status()', Blockly.Python.ORDER_FUNCTION_CALL];
+};
+
+// forBlock version for bluetooth_get_status
+Blockly.Python.forBlock['bluetooth_get_status'] = function(block, generator) {
+  return ['bluetooth_get_status()', generator.ORDER_FUNCTION_CALL || 1];
 };
 
 // Text blocks
@@ -533,7 +608,9 @@ Blockly.Python.forBlock['oled_animation_scroll'] = function(block, generator) {
     'controls_if','controls_repeat_ext','controls_whileUntil','math_number','math_arithmetic',
     'logic_compare','logic_operation','logic_negate','logic_boolean','variables_declare',
     'variables_define','variables_get','math_change','text','text_print','bluetooth_setup',
-    'bluetooth_send','bluetooth_available','bluetooth_read','my_program','ir_sensor_analog'
+    'bluetooth_send','bluetooth_available','bluetooth_read','bluetooth_is_connected','bluetooth_get_status',
+    'wifi_connect','wifi_send','wifi_receive','wifi_is_connected','wifi_get_ip','wifi_disconnect',
+    'my_program','ir_sensor_analog'
   ];
   types.forEach(t => {
     if (!api.forBlock[t] && typeof api[t] === 'function') {

@@ -257,10 +257,10 @@ def read_ultrasonic():
         distance = ULTRASONIC_SENSOR.distance_cm()
         if distance is not None:
             print("Distance:", round(distance), "cm")
-            return distance
         else:
+            distance = 0
             print("Distance: Out of range")
-            return 0
+        return distance
     except Exception as e:
         print("Distance error:", str(e))
         return 0
