@@ -2,6 +2,26 @@
 
 A code-generation workspace powered by Blockly with multi-language output (JavaScript, Python, C++, C) and optional hardware adapters.
 
+## 🚀 Quick Setup - ESP32 Upload
+
+### Required: mklittlefs Tool
+
+The ESP32 upload system requires `mklittlefs.exe` to create filesystem images.
+
+**Automatic Download (Recommended):**
+```bash
+node download-mklittlefs.js
+```
+
+**Manual Download:**
+1. Visit: https://github.com/earlephilhower/mklittlefs/releases
+2. Download `mklittlefs.exe` for Windows
+3. Place it in the project root folder (same folder as `package.json`)
+
+The upload system will automatically detect and use it.
+
+---
+
 ## Features
 
 ### 🚀 Multi-Language Support

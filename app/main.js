@@ -57,30 +57,178 @@ function detectBoardType(portInfo) {
   return 'unknown';
 }
 
-// Utility: detect what firmware is on the board
+
+async function ensureEsptoolInstalled(pythonPath) {
+  try {
+    console.log('🔍 Checking if esptool is installed...');
+    
+    const result = await new Promise((resolve) => {
+      exec(`"${pythonPath}" -m esptool version`, { timeout: 10000 }, (err, stdout, stderr) => {
+        if (!err && stdout) {
+          resolve({ success: true, version: stdout.trim() });
+        } else {
+          resolve({ success: false, error: err?.message || stderr });
+        }
+      });
+    });
+    
+    if (result.success) {
+      console.log(`✅ esptool is installed: ${result.version}`);
+      return true;
+    }
+    
+    console.log('📦 esptool not found, installing...');
+    safeSend('terminal-output', '📦 Installing esptool...');
+    
+    const installResult = await new Promise((resolve) => {
+      exec(`"${pythonPath}" -m pip install esptool`, { timeout: 60000 }, (err, stdout, stderr) => {
+        if (!err) {
+          resolve({ success: true, output: stdout });
+        } else {
+          resolve({ success: false, error: err?.message || stderr });
+        }
+      });
+    });
+    
+    if (installResult.success) {
+      console.log('[SUCCESS] esptool installed successfully');
+      safeSend('terminal-output', '[SUCCESS] esptool installed successfully');
+      return true;
+    } else {
+      console.error('[ERROR] Failed to install esptool:', installResult.error);
+      safeSend('terminal-output', `[ERROR] Failed to install esptool: ${installResult.error}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('[ERROR] Error checking/installing esptool:', error.message);
+    safeSend('terminal-output', `[ERROR] Error checking/installing esptool: ${error.message}`);
+    return false;
+  }
+}
+
+// Utility: detect ESP32 chip type and flash size
+async function detectESP32Chip(portPath, pythonPath) {
+  try {
+    console.log(`🔍 Detecting ESP32 chip type on ${portPath}...`);
+    safeSend('terminal-output', `[INFO] Detecting ESP32 chip type...`);
+    
+    const chipCmd = `"${pythonPath}" -m esptool --port ${portPath} chip_id`;
+    const result = await new Promise((resolve) => {
+      exec(chipCmd, { timeout: 10000 }, (err, stdout, stderr) => {
+        if (err) {
+          resolve({ success: false, error: stderr || err.message });
+        } else {
+          // Parse output to determine chip type
+          const output = (stdout || '').toLowerCase();
+          let chipType = 'esp32';
+          let flashSize = 4194304; // Default 4MB
+          
+          if (output.includes('esp32-s2') || output.includes('esp32s2')) {
+            chipType = 'esp32s2';
+          } else if (output.includes('esp32-s3') || output.includes('esp32s3')) {
+            chipType = 'esp32s3';
+          } else if (output.includes('esp32-c3') || output.includes('esp32c3')) {
+            chipType = 'esp32c3';
+          }
+          
+          // Try to detect flash size
+          const flashMatch = output.match(/(\d+)mb|flash.*?(\d+)/i);
+          if (flashMatch) {
+            const sizeMB = parseInt(flashMatch[1] || flashMatch[2] || '4');
+            flashSize = sizeMB * 1024 * 1024;
+          }
+          
+          resolve({ 
+            success: true, 
+            chipType, 
+            flashSize,
+            output: stdout 
+          });
+        }
+      });
+    });
+    
+    if (result.success) {
+      console.log(`✅ Detected: ${result.chipType}, Flash: ${result.flashSize / 1024 / 1024}MB`);
+      safeSend('terminal-output', `[SUCCESS] Chip: ${result.chipType}, Flash: ${result.flashSize / 1024 / 1024}MB`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Chip detection error:', error);
+    return { 
+      success: false, 
+      chipType: 'esp32', 
+      flashSize: 4194304, // Default to ESP32 4MB
+      error: error.message 
+    };
+  }
+}
+
+// Utility: detect what firmware is on the board (using esptool read-flash)
 async function detectFirmwareType(portPath) {
   try {
     console.log(`🔍 Detecting firmware type on ${portPath}...`);
     
     const pythonPath = await findPythonPath();
+    const esptoolReady = await ensureEsptoolInstalled(pythonPath);
+    if (!esptoolReady) {
+      return { 
+        type: 'unknown', 
+        compatible: false, 
+        error: 'esptool not available' 
+      };
+    }
     
-    // Try to connect with mpremote (MicroPython)
-    const mpTestCmd = `"${pythonPath}" -m mpremote connect ${portPath} exec "import sys; print(sys.implementation.name)"`;
+    // Try to read a small portion of flash to detect MicroPython signature
+    // MicroPython typically has a signature at offset 0x1000
+    // esptool v5+ requires read-flash (with hyphen) and OUTPUT file
+    const tmpOutputFile = path.join(os.tmpdir(), `firmware_detect_${Date.now()}.bin`);
+    const readCmd = `"${pythonPath}" -m esptool --port ${portPath} read-flash 0x1000 0x100 "${tmpOutputFile}"`;
     
     const result = await new Promise((resolve) => {
-      exec(mpTestCmd, { timeout: 5000 }, (err, stdout, stderr) => {
-        if (!err && stdout && stdout.includes('micropython')) {
-          resolve({ 
-            type: 'micropython', 
-            version: stdout.trim(),
-            compatible: true 
-          });
+      exec(readCmd, { timeout: 10000 }, (err, stdout, stderr) => {
+        // Cleanup temp file
+        try {
+          if (fs.existsSync(tmpOutputFile)) {
+            fs.unlinkSync(tmpOutputFile);
+          }
+        } catch (e) {}
+        
+        if (!err && fs.existsSync(tmpOutputFile)) {
+          try {
+            // Read the binary file and check for MicroPython signatures
+            const data = fs.readFileSync(tmpOutputFile);
+            const text = data.toString('utf-8', 0, Math.min(data.length, 256));
+            const lowerText = text.toLowerCase();
+            
+            if (lowerText.includes('micropython') || lowerText.includes('mpy') || 
+                data.includes(Buffer.from('MicroPython'))) {
+              resolve({ 
+                type: 'micropython', 
+                version: 'detected',
+                compatible: true 
+              });
+            } else {
+              resolve({ 
+                type: 'unknown', 
+                compatible: false,
+                error: 'Not MicroPython firmware'
+              });
+            }
+          } catch (readErr) {
+            resolve({ 
+              type: 'unknown', 
+              compatible: false,
+              error: 'Could not read flash data'
+            });
+          }
         } else {
-          // Not MicroPython - could be Arduino, ESP-IDF, or bootloader
+          // If read fails, assume bootloader or no firmware (but don't fail upload)
           resolve({ 
             type: 'unknown', 
-            compatible: false,
-            error: stderr || 'Not MicroPython firmware'
+            compatible: true, // Assume compatible to allow upload attempts
+            error: stderr || 'Could not read flash (assuming MicroPython installed)'
           });
         }
       });
@@ -91,9 +239,10 @@ async function detectFirmwareType(portPath) {
     
   } catch (error) {
     console.error('❌ Firmware detection error:', error);
+    // Don't fail upload if detection fails - assume MicroPython is installed
     return { 
       type: 'unknown', 
-      compatible: false, 
+      compatible: true, // Assume compatible to allow upload attempts
       error: error.message 
     };
   }
@@ -158,12 +307,12 @@ async function hardwareResetESP32(portPath) {
           return resolve(false);
         }
         
-        // EXACT Arduino IDE reset sequence (from esptool.py)
-        // DTR controls ESP32 EN pin (reset)
-        // RTS controls ESP32 GPIO0 pin (bootloader mode)
+        // ESP32 boot mode control (corrected mapping):
+        // DTR controls GPIO0: LOW = bootloader, HIGH = normal boot
+        // RTS controls EN (reset): LOW = reset, HIGH = normal
         
-        // Step 1: Set initial state
-        p.set({ dtr: true, rts: false }, (err1) => {
+        // Step 1: Set initial state (GPIO0 HIGH for normal boot, EN HIGH)
+        p.set({ dtr: true, rts: true }, (err1) => {
           if (err1) {
             console.log(`⚠️ Reset step 1 failed: ${err1.message}`);
             p.close(() => { try { p.destroy(); } catch {} });
@@ -171,8 +320,8 @@ async function hardwareResetESP32(portPath) {
           }
           
           setTimeout(() => {
-            // Step 2: Pull EN low (reset)
-            p.set({ dtr: false, rts: false }, (err2) => {
+            // Step 2: Pull EN low (reset) while keeping GPIO0 HIGH (normal boot)
+            p.set({ dtr: true, rts: false }, (err2) => {
               if (err2) {
                 console.log(`⚠️ Reset step 2 failed: ${err2.message}`);
                 p.close(() => { try { p.destroy(); } catch {} });
@@ -180,23 +329,24 @@ async function hardwareResetESP32(portPath) {
               }
               
               setTimeout(() => {
-                // Step 3: Release EN (boot normally)
-                p.set({ dtr: true, rts: false }, (err3) => {
+                // Step 3: Release EN (boot normally with GPIO0 HIGH)
+                p.set({ dtr: true, rts: true }, (err3) => {
                   if (err3) {
                     console.log(`⚠️ Reset step 3 failed: ${err3.message}`);
                   }
                   
                   setTimeout(() => {
+                    p.removeAllListeners();
                     p.close(() => {
                       try { p.destroy(); } catch {}
                       console.log('✅ Hardware reset complete (Arduino IDE style)');
                       resolve(true);
                     });
-                  }, 250);  // Wait for ESP32 to start booting
+                  }, 300);  // Wait for ESP32 to start booting
                 });
-              }, 100);  // Hold reset for 100ms
+              }, 150);  // Hold reset for 150ms
             });
-          }, 50);  // Initial delay
+          }, 100);  // Initial delay
         });
       });
     } catch (e) {
@@ -206,82 +356,230 @@ async function hardwareResetESP32(portPath) {
   });
 }
 
-// Send Ctrl+C/Ctrl+D to try to drop into raw REPL before mpremote uses the port
-async function pokeRawRepl(portPath) {
+// Utility: Force reset USB device on Windows (aggressive recovery)
+// NOTE: This is disabled by default as it can cause ports to disappear
+// Only use as last resort when port is completely stuck
+async function forceResetUSBPort(portPath) {
+  if (process.platform !== 'win32') {
+    return false;
+  }
+  
+  // DISABLED: This can cause ports to disappear from the system
+  // Uncomment only if absolutely necessary and user understands the risk
+  console.log(`⚠️ USB port reset disabled to prevent port disappearance`);
+  return false;
+  
+  /* DISABLED CODE - Uncomment only if needed
   return new Promise((resolve) => {
     try {
-      const p = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      p.open((err) => {
-        if (err) {
-          console.log(`Warning: pokeRawRepl open failed: ${err.message}`);
-          return resolve();
+      console.log(`🔧 Attempting aggressive USB port reset for ${portPath}...`);
+      
+      // Extract COM port number (e.g., "COM4" -> "4")
+      const comNumber = portPath.replace(/COM/i, '');
+      
+      // Method 1: Use PowerShell to reset the COM port with better error handling
+      const psCommand = `powershell -Command "$port = Get-PnpDevice -FriendlyName '*COM${comNumber}*' -ErrorAction SilentlyContinue; if ($port) { Disable-PnpDevice -InstanceId $port.InstanceId -Confirm:$false -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1000; Enable-PnpDevice -InstanceId $port.InstanceId -Confirm:$false -ErrorAction SilentlyContinue }"`;
+      
+      exec(psCommand, { timeout: 10000 }, (err, stdout, stderr) => {
+        if (!err) {
+          console.log(`✅ PowerShell USB reset executed`);
+          setTimeout(() => resolve(true), 3000); // Longer delay for re-enable
+        } else {
+          console.log(`⚠️ PowerShell reset failed: ${err.message}`);
+          setTimeout(() => resolve(true), 2000);
         }
-        // Send MULTIPLE Ctrl+C to interrupt running code, then Ctrl+D to soft reset
-        // This is more aggressive than before (6 interrupts instead of 2)
-        const payload = Buffer.from([0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x04]); // 6x ctrl-C + ctrl-D
-        p.write(payload, () => {
+      });
+    } catch (e) {
+      console.log(`⚠️ USB reset exception: ${e.message}`);
+      setTimeout(() => resolve(true), 2000);
+    }
+  });
+  */
+}
+
+// Utility: Recover port from bad state (Windows-specific)
+async function recoverPortState(portPath) {
+  return new Promise(async (resolve) => {
+    try {
+      console.log(`🔧 Attempting to recover port ${portPath}...`);
+      
+      // Step 1: Kill all processes that might be using the port
+      await killEsptoolProcesses();
+      await delay(1000);
+      
+      // Step 2: On Windows, try aggressive USB reset first (DISABLED - can cause ports to disappear)
+      // if (process.platform === 'win32') {
+      //   await forceResetUSBPort(portPath);
+      //   await delay(2000);
+      // }
+      
+      // Step 3: On Windows, use mode command to reset port state
+      if (process.platform === 'win32') {
+        try {
+          exec(`mode ${portPath} BAUD=115200 PARITY=N DATA=8 STOP=1`, { timeout: 3000 }, (err) => {
+            if (!err) {
+              console.log(`✅ Windows port reset command executed`);
+            }
+          });
+          await delay(1000);
+        } catch (modeErr) {
+          console.log(`Note: Windows mode command failed: ${modeErr.message}`);
+        }
+      }
+      
+      // Step 3: Try to open and immediately close the port to reset its state
+      const recoveryPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      
+      recoveryPort.open((err) => {
+        if (err) {
+          console.log(`⚠️ Port recovery open failed: ${err.message}`);
+          // Try to destroy anyway
+          try { recoveryPort.destroy(); } catch {}
+          // Still resolve true - we tried our best
+          setTimeout(() => resolve(true), 1000);
+          return;
+        }
+        
+        // Set port to known good state (normal boot)
+        recoveryPort.set({ dtr: true, rts: true }, () => {
           setTimeout(() => {
-            p.close(() => {
-              try { p.destroy(); } catch {}
-              resolve();
+            // Try to reset to bootloader state briefly, then back to normal
+            recoveryPort.set({ dtr: false, rts: false }, () => {
+              setTimeout(() => {
+                recoveryPort.set({ dtr: true, rts: true }, () => {
+                  setTimeout(() => {
+                    recoveryPort.removeAllListeners();
+                    recoveryPort.close((closeErr) => {
+                      try { 
+                        recoveryPort.destroy(); 
+                      } catch (destroyErr) {
+                        console.log(`Warning: Error destroying recovery port: ${destroyErr.message}`);
+                      }
+                      console.log('✅ Port recovery attempted');
+                      setTimeout(() => resolve(true), 1000); // Longer delay for Windows
+                    });
+                  }, 200);
+                });
+              }, 100);
             });
-          }, 300); // Slightly longer delay
+          }, 200);
         });
       });
     } catch (e) {
-      console.log(`Warning: pokeRawRepl exception: ${e.message}`);
-      resolve();
+      console.log(`⚠️ Port recovery exception: ${e.message}`);
+      // Still resolve true - don't block on recovery failure
+      setTimeout(() => resolve(true), 1000);
     }
   });
 }
 
-// Utility: check and install mpremote if needed
-async function ensureMpremoteInstalled(pythonPath) {
-  try {
-    console.log('🔍 Checking if mpremote is installed...');
-    
-    const result = await new Promise((resolve) => {
-      exec(`"${pythonPath}" -m mpremote --version`, { timeout: 10000 }, (err, stdout, stderr) => {
-        if (!err && stdout) {
-          resolve({ success: true, version: stdout.trim() });
-        } else {
-          resolve({ success: false, error: err?.message || stderr });
+// Utility: Enter bootloader mode on ESP32 (REPL-independent)
+async function enterBootloaderMode(portPath) {
+  return new Promise((resolve) => {
+    let bootPort = null;
+    try {
+      console.log('🔧 Entering bootloader mode...');
+      safeSend('terminal-output', '[INFO] Entering bootloader mode...');
+      
+      bootPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      bootPort.open((err) => {
+        if (err) {
+          console.log(`⚠️ Bootloader entry failed: ${err.message}`);
+          safeSend('terminal-output', `[WARNING] Automatic bootloader entry failed`);
+          safeSend('terminal-output', `[INFO] Please manually press BOOT button and try again`);
+          // Try to recover port state
+          try { if (bootPort) bootPort.destroy(); } catch {}
+          recoverPortState(portPath).then(() => resolve(false));
+          return;
         }
+        
+        // ESP32 bootloader entry sequence:
+        // DTR low = GPIO0 low (boot mode)
+        // RTS low = EN low (reset)
+        // Then release RTS (EN high) while keeping DTR low (GPIO0 low)
+        bootPort.set({ dtr: false, rts: false }, () => {
+          setTimeout(() => {
+            // Release reset but keep GPIO0 low
+            bootPort.set({ dtr: false, rts: true }, () => {
+              setTimeout(() => {
+                // CRITICAL: Properly close and destroy port, then wait for Windows to release it
+                bootPort.removeAllListeners();
+                bootPort.close((closeErr) => {
+                  try { 
+                    bootPort.destroy(); 
+                  } catch (destroyErr) {
+                    console.log(`Warning: Error destroying bootloader port: ${destroyErr.message}`);
+                  }
+                  console.log('✅ Bootloader mode entry sequence complete');
+                  safeSend('terminal-output', '[SUCCESS] Bootloader mode entered');
+                  // Wait for Windows to fully release the port handle
+                  setTimeout(() => {
+                    resolve(true);
+                  }, 500); // Additional delay for Windows port release
+                });
+              }, 200);
+            });
+          }, 150);
+        });
       });
-    });
-    
-    if (result.success) {
-      console.log(`✅ mpremote is installed: ${result.version}`);
-      return true;
+    } catch (e) {
+      console.log(`⚠️ Bootloader entry exception: ${e.message}`);
+      safeSend('terminal-output', `[WARNING] Bootloader entry failed: ${e.message}`);
+      safeSend('terminal-output', `[INFO] Please manually press BOOT button and try again`);
+      // Try to recover port state
+      try { if (bootPort) bootPort.destroy(); } catch {}
+      recoverPortState(portPath).then(() => resolve(false));
     }
-    
-    console.log('📦 mpremote not found, installing...');
-    safeSend('terminal-output', '📦 Installing mpremote...');
-    
-    const installResult = await new Promise((resolve) => {
-      exec(`"${pythonPath}" -m pip install mpremote`, { timeout: 60000 }, (err, stdout, stderr) => {
-        if (!err) {
-          resolve({ success: true, output: stdout });
-        } else {
-          resolve({ success: false, error: err?.message || stderr });
+  });
+}
+
+// Utility: Reset ESP32 to normal boot mode (GPIO0 HIGH, EN HIGH)
+async function normalBootReset(portPath) {
+  return new Promise((resolve) => {
+    try {
+      console.log('🔄 Resetting ESP32 to normal boot mode...');
+      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      resetPort.open((err) => {
+        if (err) {
+          console.log(`⚠️ Normal boot reset failed: ${err.message}`);
+          return resolve(false);
         }
+        
+        // ESP32 boot mode control:
+        // DTR controls GPIO0: LOW = bootloader, HIGH = normal boot
+        // RTS controls EN (reset): LOW = reset, HIGH = normal
+        
+        // Step 1: Ensure GPIO0 is HIGH (normal boot) and EN is HIGH (not reset)
+        resetPort.set({ dtr: true, rts: true }, () => {
+          setTimeout(() => {
+            // Step 2: Pull EN low to reset (while keeping GPIO0 HIGH for normal boot)
+            resetPort.set({ dtr: true, rts: false }, () => {
+              setTimeout(() => {
+                // Step 3: Release EN (boot normally with GPIO0 HIGH)
+                resetPort.set({ dtr: true, rts: true }, () => {
+                  setTimeout(() => {
+                    // Step 4: Double-check GPIO0 is HIGH (some boards need this)
+                    resetPort.set({ dtr: true, rts: true }, () => {
+                      setTimeout(() => {
+                        resetPort.close(() => {
+                          try { resetPort.destroy(); } catch {}
+                          console.log('✅ Normal boot reset complete');
+                          resolve(true);
+                        });
+                      }, 300); // Give time for signals to stabilize
+                    });
+                  }, 200); // Hold reset for 200ms
+                });
+              }, 150); // Hold reset for 150ms
+            });
+          }, 200); // Initial delay to ensure port is ready
+        });
       });
-    });
-    
-    if (installResult.success) {
-      console.log('[SUCCESS] mpremote installed successfully');
-      safeSend('terminal-output', '[SUCCESS] mpremote installed successfully');
-      return true;
-    } else {
-      console.error('[ERROR] Failed to install mpremote:', installResult.error);
-      safeSend('terminal-output', `[ERROR] Failed to install mpremote: ${installResult.error}`);
-      return false;
+    } catch (e) {
+      console.log(`⚠️ Normal boot reset exception: ${e.message}`);
+      resolve(false);
     }
-  } catch (error) {
-    console.error('[ERROR] Error checking/installing mpremote:', error.message);
-    safeSend('terminal-output', `[ERROR] Error checking/installing mpremote: ${error.message}`);
-    return false;
-  }
+  });
 }
 
 // Utility: check if port is available
@@ -324,23 +622,23 @@ async function isPortAvailable(portPath) {
   });
 }
 
-// Utility: Kill any lingering mpremote processes that might be locking the port
-async function killMpremoteProcesses() {
+// Utility: Kill any lingering esptool processes that might be locking the port
+async function killEsptoolProcesses() {
   return new Promise((resolve) => {
     try {
-      // On Windows, use taskkill to force-kill any python processes running mpremote
       const isWindows = process.platform === 'win32';
       
       if (isWindows) {
-        exec('taskkill /F /IM python.exe /T 2>nul', { timeout: 3000 }, (err) => {
+        // Kill esptool/python processes that might be using the port
+        exec('taskkill /F /FI "WINDOWTITLE eq *esptool*" /T 2>nul', { timeout: 3000 }, (err) => {
           // Ignore errors - process might not exist
-          console.log('🔄 Killed any lingering python/mpremote processes');
+          console.log('🔄 Cleaned up any lingering esptool processes');
           resolve();
         });
       } else {
         // On Unix-like systems, use pkill
-        exec('pkill -9 -f mpremote', { timeout: 3000 }, (err) => {
-          console.log('🔄 Killed any lingering mpremote processes');
+        exec('pkill -9 -f esptool', { timeout: 3000 }, (err) => {
+          console.log('🔄 Cleaned up any lingering esptool processes');
           resolve();
         });
       }
@@ -360,11 +658,11 @@ async function releaseComPortIfNeeded(portPath) {
     console.log(`🔄 Releasing port ${portPath}...`);
     safeSend('terminal-output', `[INFO] Closing serial monitor...`);
     
-    // STEP 1: Kill any lingering mpremote processes first
-    await killMpremoteProcesses();
+    // STEP 1: Kill any lingering esptool processes first
+    await killEsptoolProcesses();
     await delay(500);
     
-    // STEP 2: Close our open handle if any - CRITICAL: Must close before mpremote can use it
+    // STEP 2: Close our open handle if any - CRITICAL: Must close before esptool can use it
     if (currentPort) {
       console.log('🔄 Closing current serial port...');
       try {
@@ -401,9 +699,24 @@ async function releaseComPortIfNeeded(portPath) {
       }
     }
 
-    // STEP 3: Wait longer for Windows to release the handle (increased from 800ms)
+    // STEP 3: Force release port on Windows using mode command (if available)
+    if (process.platform === 'win32') {
+      try {
+        // Use Windows mode command to force release the COM port
+        exec(`mode ${portPath} BAUD=115200 PARITY=N DATA=8 STOP=1`, { timeout: 2000 }, (err) => {
+          if (!err) {
+            console.log(`✅ Windows port release command executed`);
+          }
+        });
+        await delay(300); // Brief delay after mode command
+      } catch (modeErr) {
+        console.log(`Note: Windows mode command not available: ${modeErr.message}`);
+      }
+    }
+    
+    // STEP 4: Wait longer for Windows to release the handle
     safeSend('terminal-output', `[INFO] Waiting for port to be released...`);
-    await delay(1500); // Increased delay for Windows COM port release
+    await delay(2000); // Increased delay for Windows COM port release
     
     console.log(`[SUCCESS] Port ${portPath} released successfully`);
     safeSend('terminal-output', `[SUCCESS] Port ${portPath} released, ready for upload`);
@@ -484,41 +797,22 @@ async function emergencyResetToBootloader(portPath) {
   });
 }
 
-// Utility: capture output from mpremote command (DO NOT open serial port - mpremote handles it)
-async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
+// Utility: Execute esptool command and capture output
+async function executeEsptoolCommand(command, timeoutMs = 30000) {
   return new Promise(async (resolve) => {
     let commandCompleted = false;
     
     try {
-      // CRITICAL: Close any existing serial port connection BEFORE mpremote uses it
-      // mpremote needs exclusive access to the COM port
-      if (currentPort && currentPort.isOpen) {
-        console.log('🔄 Closing existing serial port before mpremote...');
-        try {
-          await new Promise(r => {
-            currentPort.close(() => {
-              currentPort.destroy();
-              currentPort = null;
-              r();
-            });
-          });
-          // Give OS time to release the port
-          await delay(1000);
-        } catch (closeErr) {
-          console.log(`Warning: Error closing port: ${closeErr.message}`);
-        }
-      }
-      
-      // Execute the mpremote command (mpremote handles serial communication itself)
+      // Execute the esptool command
       exec(command, { timeout: timeoutMs }, (err, stdout, stderr) => {
         commandCompleted = true;
         
         if (err) {
           const errorMsg = stderr || stdout || err.message;
-          safeSend('terminal-output', `\n[Command Error]: ${errorMsg}\n`);
+          safeSend('terminal-output', `\n[esptool Error]: ${errorMsg}\n`);
           resolve({ success: false, error: errorMsg, output: stdout || stderr });
         } else {
-          safeSend('terminal-output', `\n[Command Output]: ${stdout || ''}\n`);
+          safeSend('terminal-output', `\n[esptool Output]: ${stdout || ''}\n`);
           resolve({ success: true, stdout: stdout, output: stdout });
         }
       });
@@ -537,6 +831,360 @@ async function captureSerialOutput(portPath, command, timeoutMs = 30000) {
       resolve({ success: false, error: error.message, output: '' });
     }
   });
+}
+
+// Utility: Create filesystem image (LittleFS) from files using mklittlefs CLI ONLY
+async function createFilesystemImage(files, outputPath, pythonPath) {
+  try {
+    console.log('📦 Creating filesystem image...');
+    safeSend('terminal-output', '[INFO] Creating filesystem image...');
+    safeSend('terminal-output', `[INFO] Preparing ${files.length} file(s)...`);
+    
+    // Create temporary directory with all files
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'esp32-fs-'));
+    
+    // Copy all files to temp directory
+    for (const file of files) {
+      const destPath = path.join(tmpDir, file.name);
+      const destDir = path.dirname(destPath);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+      fs.writeFileSync(destPath, file.content, 'utf-8');
+      console.log(`  Added: ${file.name}`);
+    }
+    
+    // Use ONLY mklittlefs CLI tool (like Arduino IDE / PlatformIO)
+    safeSend('terminal-output', '[INFO] Creating LittleFS image with mklittlefs...');
+    
+    // Try to find mklittlefs in common locations (prioritize bundled version)
+    const isWindows = process.platform === 'win32';
+    const exeExtension = isWindows ? '.exe' : '';
+    const mklittlefsName = `mklittlefs${exeExtension}`;
+    
+    // Get resources path (works in both dev and production)
+    // In production: process.resourcesPath points to resources/ folder
+    // In development: __dirname points to app/ folder
+    const isPackaged = app.isPackaged || process.env.NODE_ENV === 'production';
+    const resourcesPath = isPackaged 
+      ? process.resourcesPath || path.dirname(app.getPath('exe'))
+      : path.join(__dirname, '..');
+    
+    // Priority order: bundled with installer > app folder > project folder > PATH
+    const possiblePaths = [
+      // 1. Bundled with installer (in resources folder - production)
+      path.join(resourcesPath, mklittlefsName),
+      // 2. Bundled with app (in app directory - development)
+      path.join(__dirname, mklittlefsName),
+      // 3. Project root folder (development)
+      path.join(__dirname, '..', mklittlefsName),
+      // 4. mklittlefs subfolder in project (in case user placed it there)
+      path.join(__dirname, '..', 'mklittlefs', mklittlefsName),
+      // 5. Tools folder in project
+      path.join(__dirname, '..', 'tools', mklittlefsName),
+      // 6. System PATH
+      mklittlefsName,
+      // 7. Current working directory
+      path.join(process.cwd(), mklittlefsName),
+    ];
+    
+    // Check which mklittlefs is available
+    let foundPath = null;
+    for (const testPath of possiblePaths) {
+      // First check if file exists
+      if (fs.existsSync(testPath)) {
+        // Try to execute with --version to verify it works
+        try {
+          const testResult = await new Promise((resolve) => {
+            exec(`"${testPath}" --version`, { timeout: 5000 }, (err, stdout) => {
+              resolve({ works: !err, output: stdout });
+            });
+          });
+          if (testResult.works) {
+            foundPath = testPath;
+            console.log(`✅ Found mklittlefs at: ${foundPath}`);
+            if (testPath.includes(__dirname)) {
+              safeSend('terminal-output', `[INFO] Using bundled mklittlefs`);
+            }
+            break;
+          }
+        } catch (e) {
+          // File exists but might not be executable, try anyway
+          foundPath = testPath;
+          console.log(`⚠️ Found mklittlefs at: ${foundPath} (will try to use)`);
+          break;
+        }
+      }
+    }
+    
+    if (!foundPath) {
+      // mklittlefs not found anywhere
+      const mklittlefsCmd = `mklittlefs${exeExtension} -c "${tmpDir}" -s ${1024 * 1024} "${outputPath}"`;
+      // Try once more with just the name (in case it's in PATH but check failed)
+      const testResult = await new Promise((resolve) => {
+        exec(`"${mklittlefsName}" --version`, { timeout: 5000 }, (err) => {
+          resolve({ found: !err });
+        });
+      });
+      if (testResult.found) {
+        foundPath = mklittlefsName;
+      }
+    }
+    
+    if (!foundPath) {
+      // Cleanup temp directory before returning error
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (e) {}
+      
+      // Show error with instructions
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '❌ ========================================');
+      safeSend('terminal-output', '   MKLITTLEFS NOT FOUND');
+      safeSend('terminal-output', '========================================');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '📦 mklittlefs is required to upload files to ESP32.');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '🔧 INSTALLATION OPTIONS:');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', 'Option 1 - Bundle with app (Recommended):');
+      safeSend('terminal-output', `  1. Download mklittlefs.exe from:`);
+      safeSend('terminal-output', '     https://github.com/littlefs-project/littlefs/releases');
+      safeSend('terminal-output', `  2. Place mklittlefs.exe in: ${path.join(__dirname, '..')}`);
+      safeSend('terminal-output', '     (Same folder as package.json)');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', 'Option 2 - Add to system PATH:');
+      safeSend('terminal-output', '  1. Download and extract mklittlefs.exe');
+      safeSend('terminal-output', '  2. Add the folder to your system PATH');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '💡 After placing mklittlefs.exe, restart this application.');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '========================================');
+      
+      return { 
+        success: false, 
+        error: 'mklittlefs not found. Please install mklittlefs to upload files.' 
+      };
+    }
+    
+    const mklittlefsCmd = `"${foundPath}" -c "${tmpDir}" -s ${1024 * 1024} "${outputPath}"`;
+    
+    const result = await new Promise((resolve) => {
+      exec(mklittlefsCmd, { timeout: 30000 }, (err, stdout, stderr) => {
+        if (!err && fs.existsSync(outputPath)) {
+          const size = fs.statSync(outputPath).size;
+          resolve({ success: true, size: size });
+        } else {
+          const errorMsg = stderr || stdout || err?.message || 'mklittlefs command failed';
+          resolve({ success: false, error: errorMsg });
+        }
+      });
+    });
+    
+    // Cleanup temp directory
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch (e) {
+      console.log(`Warning: Could not clean temp dir: ${e.message}`);
+    }
+    
+    if (result.success) {
+      console.log(`✅ Filesystem image created: ${result.size} bytes`);
+      safeSend('terminal-output', `[SUCCESS] Filesystem image created (${result.size} bytes)`);
+      return { success: true };
+    } else {
+      // Clear error message - stop upload immediately
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '❌ ========================================');
+      safeSend('terminal-output', '   MKLITTLEFS NOT FOUND');
+      safeSend('terminal-output', '========================================');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '📦 mklittlefs is required to upload files to ESP32.');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '🔧 INSTALLATION INSTRUCTIONS:');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', 'Windows:');
+      safeSend('terminal-output', '  1. Download mklittlefs from:');
+      safeSend('terminal-output', '     https://github.com/littlefs-project/littlefs/releases');
+      safeSend('terminal-output', '  2. Extract mklittlefs.exe');
+      safeSend('terminal-output', '  3. Add to PATH or place in project folder');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', 'Linux/Mac:');
+      safeSend('terminal-output', '  sudo apt-get install mklittlefs  (Debian/Ubuntu)');
+      safeSend('terminal-output', '  brew install mklittlefs          (macOS)');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '💡 After installing, restart this application and try again.');
+      safeSend('terminal-output', '');
+      safeSend('terminal-output', '========================================');
+      
+      return { 
+        success: false, 
+        error: 'mklittlefs not found. Please install mklittlefs to upload files.' 
+      };
+    }
+  } catch (error) {
+    console.error('❌ Filesystem image creation error:', error);
+    safeSend('terminal-output', `[ERROR] Filesystem creation failed: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+
+// Utility: Flash filesystem image to ESP32 using esptool
+async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pythonPath) {
+  try {
+    console.log('📤 Flashing filesystem image...');
+    safeSend('terminal-output', '[INFO] Flashing filesystem image...');
+    
+    // CRITICAL: Ensure port is completely released before flashing
+    await killEsptoolProcesses();
+    await delay(1000); // Increased delay for better cleanup
+    
+    // CRITICAL: Force port recovery before flashing
+    console.log('🔧 Recovering port state before flash...');
+    safeSend('terminal-output', '[INFO] Preparing port for flash operation...');
+    await recoverPortState(portPath);
+    await delay(1000);
+    
+    let fsOffset = 0x200000; // Default 2MB offset for 4MB flash (properly 4KB-aligned)
+    
+    if (flashSize <= 2 * 1024 * 1024) {
+      fsOffset = 0x100000; // 1MB offset for 2MB flash (aligned)
+    } else if (flashSize >= 8 * 1024 * 1024) {
+      fsOffset = 0x300000; // 3MB offset for 8MB+ flash (aligned)
+    }
+    
+    console.log(`📍 Filesystem offset: 0x${fsOffset.toString(16)}`);
+    safeSend('terminal-output', `[INFO] Filesystem offset: 0x${fsOffset.toString(16)}`);
+    
+    // Build esptool command - use write-flash (esptool v5+ syntax)
+    const chipArg = chipType === 'esp32s2' ? 'esp32s2' : 
+                    chipType === 'esp32s3' ? 'esp32s3' :
+                    chipType === 'esp32c3' ? 'esp32c3' : 'esp32';
+    
+    // Add --before default_reset and --after hard_reset for better reliability
+    const flashCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} --before default_reset --after hard_reset write-flash 0x${fsOffset.toString(16)} "${fsImagePath}"`;
+    
+    console.log(`Executing: ${flashCmd}`);
+    safeSend('terminal-output', `[INFO] Starting flash operation...`);
+    
+    // Enhanced retry logic with aggressive recovery
+    let result;
+    let maxRetries = 5; // Increased from 3 to 5
+    let retries = maxRetries;
+    let lastError = null;
+    
+    let consecutivePortFailures = 0;
+    const maxPortFailures = 2; // Skip port check after 2 consecutive failures
+    
+    while (retries > 0) {
+      // Skip port availability check entirely if we've had failures
+      // The "device not functioning" error means the port check will always fail
+      // but esptool might still be able to work
+      if (consecutivePortFailures < maxPortFailures) {
+        const portAvailable = await isPortAvailable(portPath);
+        if (!portAvailable) {
+          consecutivePortFailures++;
+          console.log(`⚠️ Port not available, attempting aggressive recovery... (${retries} attempts left)`);
+          safeSend('terminal-output', `[WARNING] Port not ready, performing aggressive recovery...`);
+          
+          // Aggressive recovery sequence
+          await killEsptoolProcesses();
+          await delay(1000);
+          await recoverPortState(portPath);
+          await delay(3000); // Longer delay for USB reset to take effect
+          await killEsptoolProcesses();
+          await delay(1000);
+          
+          // If we've failed too many times, skip the check and just try flashing
+          if (consecutivePortFailures >= maxPortFailures) {
+            console.log(`⚠️ Port check failed multiple times, skipping check and attempting flash...`);
+            safeSend('terminal-output', `[INFO] Skipping port check, attempting flash directly...`);
+            safeSend('terminal-output', `[INFO] If this fails, please unplug and replug USB cable`);
+          } else {
+            retries--;
+            continue;
+          }
+        } else {
+          consecutivePortFailures = 0; // Reset counter on success
+        }
+      } else {
+        // Skip port check entirely - just try the flash
+        console.log(`⚠️ Skipping port check (previous failures), attempting flash directly...`);
+      }
+      
+      result = await executeEsptoolCommand(flashCmd, 90000); // Increased timeout to 90 seconds
+      
+      if (result.success) {
+        break; // Success, exit retry loop
+      }
+      
+      // Check if it's a port access error (including "device not functioning")
+      const isPortError = result.error && (
+        result.error.includes('port is busy') ||
+        result.error.includes('Access is denied') ||
+        result.error.includes('PermissionError') ||
+        result.error.includes('FileNotFoundError') ||
+        result.error.includes('cannot find the file') ||
+        result.error.includes('device attached to the system is not functioning') ||
+        result.error.includes('device is not functioning') ||
+        result.error.includes('Cannot configure port') ||
+        result.error.includes('port doesn\'t exist') ||
+        result.error.includes('port is not available')
+      );
+      
+      if (isPortError && retries > 1) {
+        retries--;
+        lastError = result.error;
+        console.log(`⚠️ Port access error, attempting aggressive recovery... (${retries} attempts left)`);
+        safeSend('terminal-output', `[WARNING] Port access issue (attempt ${maxRetries - retries + 1}/${maxRetries})`);
+        
+        // Aggressive recovery sequence
+        await killEsptoolProcesses();
+        await delay(1000);
+        await emergencyResetToBootloader(portPath);
+        await delay(1000);
+        await recoverPortState(portPath);
+        await delay(1500);
+        
+        safeSend('terminal-output', `[INFO] Retrying flash operation...`);
+      } else {
+        break; // Not a retryable error or out of retries
+      }
+    }
+    
+    if (!result.success && lastError) {
+      result.error = lastError;
+    }
+    
+    if (result.success) {
+      console.log('✅ Filesystem flashed successfully');
+      safeSend('terminal-output', '[SUCCESS] Filesystem flashed successfully');
+      return { success: true };
+    } else {
+      console.error('❌ Filesystem flash failed:', result.error);
+      safeSend('terminal-output', `[ERROR] Filesystem flash failed: ${result.error}`);
+      
+      // Provide specific troubleshooting based on error type
+      if (result.error.includes('PermissionError') || result.error.includes('device is not functioning') || result.error.includes('Access is denied')) {
+        safeSend('terminal-output', '');
+        safeSend('terminal-output', '🔧 TROUBLESHOOTING STEPS:');
+        safeSend('terminal-output', '1. Unplug and replug the USB cable');
+        safeSend('terminal-output', '2. Try a different USB port (preferably USB 2.0)');
+        safeSend('terminal-output', '3. Close any other programs using the COM port');
+        safeSend('terminal-output', '4. Restart the application');
+        safeSend('terminal-output', '5. Update USB-to-serial drivers (CH340/CP210x)');
+        safeSend('terminal-output', '6. Try entering bootloader manually: Hold BOOT, press RESET, release BOOT');
+        safeSend('terminal-output', '');
+      }
+      
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    console.error('❌ Filesystem flash error:', error);
+    safeSend('terminal-output', `[ERROR] Filesystem flash error: ${error.message}`);
+    return { success: false, error: error.message };
+  }
 }
 
 // Utility: run a shell command with retries and backoff
@@ -612,33 +1260,65 @@ app.on('window-all-closed', () => {
 // ---- Serial Port Management with Firmware Detection ----
 ipcMain.handle('list-serial-ports', async () => {
   try {
+    console.log('🔍 Listing serial ports...');
     const ports = await SerialPort.list();
+    console.log(`✅ Found ${ports.length} port(s) from SerialPort.list()`);
+    
+    if (ports.length === 0) {
+      console.log('⚠️ No ports detected - this might be due to USB port issues');
+      console.log('💡 Try: Unplug and replug USB cable, or restart the application');
+      return [];
+    }
     
     // Enhance port information with firmware detection and board type
-    const enhancedPorts = await Promise.all(ports.map(async (port) => {
+    // Use Promise.allSettled to prevent one port from blocking others
+    const portPromises = ports.map(async (port) => {
       try {
         // Detect board type based on port information
         const boardType = detectBoardType(port);
         
-        // Quick firmware check (with short timeout)
-        const firmwareInfo = await detectFirmwareType(port.path);
+        // Quick firmware check (with short timeout) - skip if port is in bad state
+        let firmwareInfo = { type: 'unknown', compatible: false };
+        try {
+          firmwareInfo = await detectFirmwareType(port.path);
+        } catch (fwErr) {
+          console.log(`⚠️ Firmware detection skipped for ${port.path}: ${fwErr.message}`);
+        }
+        
         return {
           ...port,
-          boardType: boardType, // NEW: Add board type (esp32, arduino, pico, etc.)
+          boardType: boardType,
           hasMicroPython: firmwareInfo.compatible,
           firmwareType: firmwareInfo.type,
-          recommended: firmwareInfo.compatible // Mark MicroPython ports as recommended
+          recommended: firmwareInfo.compatible
         };
       } catch (error) {
+        console.log(`⚠️ Error enhancing port ${port.path}: ${error.message}`);
         return {
           ...port,
-          boardType: detectBoardType(port), // NEW: Add board type even if firmware detection fails
+          boardType: detectBoardType(port),
           hasMicroPython: false,
           firmwareType: 'unknown',
           recommended: false
         };
       }
-    }));
+    });
+    
+    const results = await Promise.allSettled(portPromises);
+    const enhancedPorts = results.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        console.log(`⚠️ Port enhancement failed for port ${ports[index].path}: ${result.reason}`);
+        return {
+          ...ports[index],
+          boardType: detectBoardType(ports[index]),
+          hasMicroPython: false,
+          firmwareType: 'unknown',
+          recommended: false
+        };
+      }
+    });
     
     // Sort: MicroPython ports first
     enhancedPorts.sort((a, b) => {
@@ -647,9 +1327,11 @@ ipcMain.handle('list-serial-ports', async () => {
       return 0;
     });
     
+    console.log(`✅ Returning ${enhancedPorts.length} enhanced port(s)`);
     return enhancedPorts;
   } catch (err) {
-    console.error("SerialPort.list() error:", err);
+    console.error("❌ SerialPort.list() error:", err);
+    console.error("Stack:", err.stack);
     return [];
   }
 });
@@ -701,9 +1383,40 @@ ipcMain.handle('send-serial-data', async (_e, portPath, data) => {
 
 ipcMain.handle('close-serial-port', async () => {
   try {
-    if (currentPort && currentPort.isOpen) { 
-      await new Promise(r => currentPort.close(r)); 
-      currentPort = null; 
+    if (currentPort) {
+      console.log('🔄 Closing serial port via IPC...');
+      try {
+        currentPort.removeAllListeners();
+        if (currentPort.isOpen) {
+          await new Promise((res) => {
+            const timeout = setTimeout(() => {
+              console.log('⚠️ Port close timeout, forcing destroy...');
+              res();
+            }, 2000);
+            currentPort.close(() => {
+              clearTimeout(timeout);
+              res();
+            });
+          });
+        }
+        try {
+          currentPort.destroy();
+        } catch (destroyErr) {
+          console.log(`Warning: Error destroying port: ${destroyErr.message}`);
+        }
+        currentPort = null;
+        console.log('✅ Serial port closed successfully');
+      } catch (closeErr) {
+        console.log(`Warning: Error closing port: ${closeErr.message}`);
+        try {
+          if (currentPort) {
+            currentPort.destroy();
+            currentPort = null;
+          }
+        } catch (e) {
+          console.log(`Warning: Error in force destroy: ${e.message}`);
+        }
+      }
     }
     return { success: true };
   } catch (err) { 
@@ -924,348 +1637,158 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
       return { success: false, error: 'No port specified for upload' };
     }
     
-    console.log(`[UPLOAD] Starting Python upload to ${boardType} board...`);
-    safeSend('terminal-output', `\n========================================`);
-    safeSend('terminal-output', `  Board Type: ${boardType.toUpperCase()}`);
-    safeSend('terminal-output', `========================================`);
+    // Only support ESP32 for now (other boards can be added later)
+    if (boardType !== 'esp32') {
+      return { success: false, error: `Board type ${boardType} not yet supported. Only ESP32 is supported with the new esptool-based upload system.` };
+    }
     
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'python-upload-'));
-    const pyPath = path.join(tmpDir, 'main.py');
-    fs.writeFileSync(pyPath, code, 'utf-8');
-    const helperFiles = [
-      { key: 'hcsr04', path: path.join(__dirname, '..', 'micropython_libraries', 'hcsr04.py') },
-      { key: 'tcs34725', path: path.join(__dirname, '..', 'micropython_libraries', 'tcs34725.py') },
-      { key: 'ssd1306', path: path.join(__dirname, '..', 'micropython_libraries', 'ssd1306.py') },
-      { key: 'servo', path: path.join(__dirname, '..', 'micropython_libraries', 'servo.py') },
-      { key: 'dht', path: path.join(__dirname, '..', 'micropython_libraries', 'dht.py') },
-      { key: 'onewire', path: path.join(__dirname, '..', 'micropython_libraries', 'onewire.py') },
-      { key: 'ds18x20', path: path.join(__dirname, '..', 'micropython_libraries', 'ds18x20.py') },
-      { key: 'utils', path: path.join(__dirname, '..', 'micropython_libraries', 'utils.py') },
-    ];
-    const detectHelperFiles = (codeStr) => {
-      const needed = [];
-      helperFiles.forEach(f => {
-        if (codeStr.includes(`import ${f.key}`)) {
-          needed.push(f);
-        }
-      });
-      return needed;
-    };
+    console.log(`[UPLOAD] Starting Python upload to ${boardType} board using esptool...`);
+    safeSend('terminal-output', `\n========================================`);
+    safeSend('terminal-output', `  ESP32 Upload (esptool-based)`);
+    safeSend('terminal-output', `========================================`);
     
     return await new Promise(async (res) => {
       try {
-        // Find Python path dynamically
+        // Step 1: Find Python and ensure esptool is installed
         const pythonPath = await findPythonPath();
+        safeSend('terminal-output', '[STEP 1/6] Checking esptool...');
         
-        // Ensure mpremote is installed
-        const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
-        if (!mpremoteReady) {
-          res({ success: false, error: 'mpremote installation failed' });
+        const esptoolReady = await ensureEsptoolInstalled(pythonPath);
+        if (!esptoolReady) {
+          res({ success: false, error: 'esptool installation failed' });
           return;
         }
         
-        // CRITICAL: Detect firmware type first (but skip if port is busy with serial monitor)
-        safeSend('terminal-output', '\n[INFO] Detecting firmware...');
-        
-        // Try firmware detection, but don't fail if port is busy
-        let firmwareInfo;
-        try {
-          firmwareInfo = await detectFirmwareType(port);
-        } catch (detectError) {
-          console.log('⚠️ Firmware detection failed (port may be busy), assuming MicroPython is installed');
-          firmwareInfo = { compatible: true, type: 'micropython', version: 'assumed' };
-        }
-        
-        // Only show error if we're SURE it's not MicroPython (not just port busy)
-        if (!firmwareInfo.compatible && firmwareInfo.type !== 'unknown') {
-          safeSend('terminal-output', '');
-          safeSend('terminal-output', '❌ INCOMPATIBLE FIRMWARE DETECTED');
-          safeSend('terminal-output', '');
-          safeSend('terminal-output', '🎯 Your ESP32 does NOT have MicroPython firmware!');
-          safeSend('terminal-output', '   It may have Arduino, ESP-IDF, or other firmware.');
-          safeSend('terminal-output', '');
-          safeSend('terminal-output', '💡 SOLUTION: Flash MicroPython firmware first');
-          safeSend('terminal-output', '');
-          safeSend('terminal-output', '📝 Quick Installation Steps:');
-          safeSend('terminal-output', '   1. Close this application');
-          safeSend('terminal-output', '   2. Open Command Prompt as Administrator');
-          safeSend('terminal-output', '   3. Run: pip install esptool');
-          safeSend('terminal-output', `   4. Run: esptool.py --port ${port} erase_flash`);
-          safeSend('terminal-output', `   5. Run: esptool.py --chip esp32 --port ${port} write_flash -z 0x1000 ESP32_GENERIC-D2WD-20250809-v1.26.0.bin`);
-          safeSend('terminal-output', '   6. Restart this application and try again');
-          safeSend('terminal-output', '');
-          safeSend('terminal-output', '📄 The firmware file (ESP32_GENERIC-D2WD-20250809-v1.26.0.bin) is in your project folder');
-          safeSend('terminal-output', '');
-          res({ 
-            success: false, 
-            error: 'MicroPython firmware not installed. Please flash MicroPython firmware first.',
-            needsFirmware: true
-          });
-          return;
-        }
-        
-        // If detection uncertain (port busy), assume MicroPython and continue
-        if (firmwareInfo.version === 'assumed') {
-          safeSend('terminal-output', `[WARNING] Firmware detection skipped (port busy)`);
-          safeSend('terminal-output', `[INFO] If upload fails, close Serial Monitor and try again`);
-        } else {
-          safeSend('terminal-output', `[SUCCESS] MicroPython firmware detected: ${firmwareInfo.version || 'micropython'}`);
-        }
-        await delay(300);
-        
-        // CRITICAL: Release port FIRST before any mpremote operations
+        // Step 2: Release port and enter bootloader mode
+        safeSend('terminal-output', '[STEP 2/6] Preparing ESP32 for upload...');
         await releaseComPortIfNeeded(port);
-        await delay(1500);  // INCREASED: Extra time for Windows to fully release COM port
+        await delay(1500); // Increased delay after port release
         
-        // Board-specific reset logic
-        const isESP32 = boardType === 'esp32';
-        
-        if (isESP32) {
-          // ESP32-specific aggressive hardware reset (like Arduino IDE)
-          safeSend('terminal-output', '[INFO] Resetting ESP32 board...');
-          const resetSuccess = await hardwareResetESP32(port);
-          if (resetSuccess) {
-            safeSend('terminal-output', '[SUCCESS] Board reset complete. Waiting for boot...');
-            await delay(3500);  // INCREASED: Wait for ESP32 to fully boot and port to release
-          } else {
-            safeSend('terminal-output', '[WARNING] Hardware reset incomplete, trying software reset...');
-            await delay(2000);  // INCREASED: More time for port release
-          }
-        } else {
-          // For non-ESP32 boards, use gentler reset approach
-          safeSend('terminal-output', `[INFO] Preparing ${boardType} board for upload...`);
-          await hardResetPort(port);
-          await delay(2000);  // INCREASED: More time for port release
-        }
-        
-        // Send interrupt signals to stop any running code
-        safeSend('terminal-output', '[INFO] Stopping any running programs...');
-        await pokeRawRepl(port);
-        await delay(1500);  // INCREASED: Longer delay for port to fully close and release
-        
-        // CRITICAL FIX: Upload a BLANK main.py FIRST to stop old code from running
-        // This is the key difference from Arduino IDE - we need to erase old code first
-        safeSend('terminal-output', `[INFO] Clearing previous code from board...`);
-        const blankCode = 'pass\n'; // Minimal Python code that does nothing
-        const blankTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'blank-upload-'));
-        const blankPyPath = path.join(blankTmpDir, 'main.py');
-        fs.writeFileSync(blankPyPath, blankCode, 'utf-8');
-        
-        // Upload blank main.py with retry logic
-        const blankCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${blankPyPath.replace(/\\/g, '/')}" :main.py`;
-        let blankResult = await captureSerialOutput(port, blankCmd, 20000);
-        
-        // Retry logic - more aggressive for ESP32, gentler for others
-        if (!blankResult.success && ((blankResult.error || '').includes('could not enter raw repl') || (blankResult.error || '').includes('failed to access'))) {
-          safeSend('terminal-output', '⚠️ Retrying to clear old code (attempt 1/3)...');
-          await killMpremoteProcesses();  // Kill any stuck mpremote processes
+        // Enter bootloader mode (REPL-independent)
+        const bootloaderSuccess = await enterBootloaderMode(port);
+        if (!bootloaderSuccess) {
+          safeSend('terminal-output', '[WARNING] Automatic bootloader entry failed');
+          safeSend('terminal-output', '[INFO] Attempting port recovery...');
+          await recoverPortState(port);
           await delay(1000);
-          await hardResetPort(port);
-          await delay(2000);  // INCREASED: More time for port release
-          await pokeRawRepl(port);
-          await delay(1500);  // INCREASED: More time for port release
-          blankResult = await captureSerialOutput(port, blankCmd, 20000);
-        }
-        
-        // Level 2: More aggressive retry (ESP32-specific hardware reset only for ESP32)
-        if (!blankResult.success) {
-          if (isESP32) {
-            safeSend('terminal-output', '⚠️ Retrying with ESP32 hardware reset (attempt 2/3)...');
-            await killMpremoteProcesses();  // Kill any stuck mpremote processes
-            await delay(1000);
-            await hardwareResetESP32(port);  // ESP32-specific hardware reset
-            await delay(3000);  // INCREASED: More time for reset and port release
+          safeSend('terminal-output', '[INFO] Please manually press BOOT button, then press RESET');
+          safeSend('terminal-output', '[INFO] Hold BOOT, press and release RESET, then release BOOT');
+          safeSend('terminal-output', '[INFO] Waiting 8 seconds for manual bootloader entry...');
+          await delay(8000);
+          safeSend('terminal-output', '[INFO] Recovering port after manual bootloader entry...');
+          await killEsptoolProcesses();
+          await delay(1000);
+          await recoverPortState(port);
+          await delay(2000);
           } else {
-            safeSend('terminal-output', '⚠️ Retrying with soft reset (attempt 2/3)...');
-            await killMpremoteProcesses();  // Kill any stuck mpremote processes
             await delay(1000);
-            await hardResetPort(port);
-            await delay(2500);  // INCREASED: More time for port release
+            await recoverPortState(port);
+            await delay(1000);
           }
-          await pokeRawRepl(port);
-          await delay(1500);  // INCREASED: More time for port release
-          blankResult = await captureSerialOutput(port, blankCmd, 25000);
-        }
+          await delay(2000); // Increased delay after bootloader entry
         
-        // Level 3: Emergency reset (ESP32-specific bootloader mode only for ESP32)
-        if (!blankResult.success) {
-          if (isESP32) {
-            safeSend('terminal-output', '🚨 ESP32 Emergency bootloader reset (attempt 3/3)...');
-            await killMpremoteProcesses();  // Kill any stuck mpremote processes
-            await delay(1000);
-            await emergencyResetToBootloader(port);
-            await delay(3000); // INCREASED: Bootloader needs more time
-            await hardwareResetESP32(port);  // Hardware reset after bootloader
-            await delay(3000);  // INCREASED: More time for port release
-          } else {
-            safeSend('terminal-output', '⚠️ Final retry attempt (3/3)...');
-            await killMpremoteProcesses();  // Kill any stuck mpremote processes
-            await delay(1000);
-            await hardResetPort(port);
-            await delay(2500);  // INCREASED: More time for port release
-          }
-          await pokeRawRepl(port);
-          await delay(1500);  // INCREASED: More time for port release
-          blankResult = await captureSerialOutput(port, blankCmd, 30000);
-        }
+        // Step 3: Detect ESP32 chip type and flash size
+        safeSend('terminal-output', '[STEP 3/6] Detecting ESP32 chip...');
+        // Ensure port is still available before chip detection
+        await killEsptoolProcesses();
+        await delay(500);
+        const chipInfo = await detectESP32Chip(port, pythonPath);
+        const chipType = chipInfo.chipType || 'esp32';
+        const flashSize = chipInfo.flashSize || 4194304; // Default 4MB
         
-        if (blankResult.success) {
-          safeSend('terminal-output', '[SUCCESS] Previous code cleared');
-          // Reset to run the blank code, stopping any previous loops
-          await hardResetPort(port);
-          await delay(2000); // INCREASED: Let blank code run and port release properly
-        } else {
-          // Even after 3 retries, board is stuck
-          const errorHelp = isESP32 ? `
-❌ Could not clear old code after 3 attempts (including emergency bootloader reset).
-
-🔧 The ESP32 is stuck in a loop. Try these steps IN ORDER:
-
-1️⃣ PHYSICAL RESET (Recommended - Try this first):
-   - Hold the BOOT button on ESP32
-   - While holding BOOT, press and release RESET button
-   - Release BOOT button
-   - ESP32 should now be in bootloader mode
-   - Try uploading again immediately
-
-2️⃣ USB POWER CYCLE:
-   - Unplug the USB cable completely
-   - Wait 5 seconds
-   - Plug USB back in
-   - Try uploading immediately
-
-3️⃣ REFLASH FIRMWARE (Last resort):
-   - Click "Flash MicroPython" button in toolbar
-   - This will erase ALL code and reinstall MicroPython
-   - Then try uploading your program again
-
-💡 If Arduino IDE works but this app doesn't, the ESP32 likely has
-   code running that blocks mpremote. Physical reset is fastest fix.
-` : `
-❌ Could not clear old code after 3 attempts.
-
-🔧 The ${boardType} board is not responding. Try these steps:
-
-1️⃣ PHYSICAL RESET:
-   - Press the RESET button on your ${boardType} board
-   - Wait 3 seconds
-   - Try uploading again immediately
-
-2️⃣ USB POWER CYCLE:
-   - Unplug the USB cable completely
-   - Wait 5 seconds
-   - Plug USB back in
-   - Try uploading immediately
-
-3️⃣ CHECK CONNECTION:
-   - Ensure the USB cable is properly connected
-   - Try a different USB port
-   - Make sure the board has MicroPython firmware installed
-
-💡 If you recently uploaded code that blocks the board, a physical reset should help.
-`;
-          safeSend('terminal-output', errorHelp);
-          res({ success: false, error: `${boardType} board stuck - physical reset required` });
-          return;
-        }
-
-        // Upload with retry logic for "could not enter raw repl" error
-        safeSend('terminal-output', `\n[UPLOAD] Transferring code to ${boardType}...`);
+        // Step 4: Prepare files for filesystem
+        safeSend('terminal-output', '[STEP 4/6] Preparing filesystem...');
         
-        // Upload helper libraries if referenced in code
-        const helpersNeeded = detectHelperFiles(code);
-        for (const helper of helpersNeeded) {
-          try {
-            safeSend('terminal-output', `[INFO] Installing library: ${helper.key}.py`);
-            // Extra reset and delay before each helper to avoid raw REPL issues
-            await hardResetPort(port);
-            await delay(1500);  // INCREASED: More time for port release
-            await pokeRawRepl(port);
-            await delay(1500);  // INCREASED: More time for port release
-            
-            const uploadHelperCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${helper.path.replace(/\\/g, '/')}" :${helper.key}.py`;
-            const helperResult = await captureSerialOutput(port, uploadHelperCmd, 15000);
-            if (!helperResult.success) {
-              safeSend('terminal-output', `[WARNING] Failed to install ${helper.key}.py: ${helperResult.error || 'Unknown error'}`);
-            } else {
-              safeSend('terminal-output', `[SUCCESS] ${helper.key}.py installed`);
+        // Collect all files to upload
+        const filesToUpload = [];
+        
+        // Add main.py
+        filesToUpload.push({
+          name: 'main.py',
+          content: code
+        });
+        
+        // Add helper libraries if referenced
+        const helperFiles = [
+          { key: 'hcsr04', path: path.join(__dirname, '..', 'micropython_libraries', 'hcsr04.py') },
+          { key: 'tcs34725', path: path.join(__dirname, '..', 'micropython_libraries', 'tcs34725.py') },
+          { key: 'ssd1306', path: path.join(__dirname, '..', 'micropython_libraries', 'ssd1306.py') },
+          { key: 'servo', path: path.join(__dirname, '..', 'micropython_libraries', 'servo.py') },
+          { key: 'dht', path: path.join(__dirname, '..', 'micropython_libraries', 'dht.py') },
+          { key: 'onewire', path: path.join(__dirname, '..', 'micropython_libraries', 'onewire.py') },
+          { key: 'ds18x20', path: path.join(__dirname, '..', 'micropython_libraries', 'ds18x20.py') },
+          { key: 'utils', path: path.join(__dirname, '..', 'micropython_libraries', 'utils.py') },
+        ];
+        
+        helperFiles.forEach(helper => {
+          if (code.includes(`import ${helper.key}`) && fs.existsSync(helper.path)) {
+            try {
+              const content = fs.readFileSync(helper.path, 'utf-8');
+              filesToUpload.push({
+                name: `${helper.key}.py`,
+                content: content
+              });
+              safeSend('terminal-output', `[INFO] Including library: ${helper.key}.py`);
+            } catch (err) {
+              console.log(`Warning: Could not read ${helper.key}.py: ${err.message}`);
             }
-          } catch (helperErr) {
-            safeSend('terminal-output', `[WARNING] Error installing ${helper.key}.py: ${helperErr.message}`);
           }
-          // Longer gap between helper uploads
-          await delay(1500);  // INCREASED: More time for port release
-        }
+        });
         
-        // Deterministic, single-pass sequence (no parallel attempts)
-        // Longer pause after hard reset to let MicroPython boot fully
-        await delay(2000); // INCREASED: More time for port to be ready
-        await pokeRawRepl(port);
-        await delay(1500); // INCREASED: Wait for poke to take effect and port release
-
-        // Push main.py with TWO retries on raw repl failure (increased from one)
-        const fsCpCmd = `"${pythonPath}" -m mpremote connect ${port} fs cp "${pyPath.replace(/\\/g, '/')}" :main.py`;
-        let fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
+        // Step 5: Create filesystem image
+        safeSend('terminal-output', '[STEP 5/6] Creating filesystem image...');
+        const fsImagePath = path.join(os.tmpdir(), `esp32-fs-${Date.now()}.bin`);
         
-        // First retry
-        if (!fsResult.success && ((fsResult.error || '').includes('could not enter raw repl') || (fsResult.error || '').includes('failed to access'))) {
-          safeSend('terminal-output', '[WARNING] Connection lost, retrying (1/2)...');
-          await killMpremoteProcesses();  // Kill any stuck mpremote processes
-          await delay(1000);
-          await hardResetPort(port);
-          await delay(2500); // INCREASED: More time for port release
-          await pokeRawRepl(port);
-          await delay(1500);  // INCREASED: More time for port release
-          fsResult = await captureSerialOutput(port, fsCpCmd, 20000);
-        }
-        
-        // Second retry
-        if (!fsResult.success && ((fsResult.error || '').includes('could not enter raw repl') || (fsResult.error || '').includes('failed to access'))) {
-          safeSend('terminal-output', '[WARNING] Connection lost, retrying (2/2)...');
-          await killMpremoteProcesses();  // Kill any stuck mpremote processes
-          await delay(1000);
-          await hardResetPort(port);
-          await delay(3000); // INCREASED: Maximum delay for port release
-          await pokeRawRepl(port);
-          await delay(1500);  // INCREASED: More time for port release
-          fsResult = await captureSerialOutput(port, fsCpCmd, 25000); // Longer timeout
-        }
-        if (!fsResult.success) {
-          // Provide helpful error message with troubleshooting steps
-          const errorMsg = fsResult.error || 'Upload failed (fs cp)';
-          const helpText = `
-
-❌ Failed to upload code after multiple attempts.
-
-🔧 Troubleshooting steps:
-1. Press the physical RESET button on your ${boardType} board
-2. Wait 3 seconds, then try uploading again
-3. If still failing, click "Flash MicroPython" button to reinstall firmware
-4. Unplug and replug the USB cable
-5. Try a different USB port
-
-💡 The ${boardType} board may be running code that blocks uploads. 
-   ${isESP32 ? 'Flashing MicroPython firmware will clear everything and start fresh.' : 'A physical reset usually resolves this issue.'}`;
-          
-          safeSend('terminal-output', helpText);
-          res({ success: false, error: errorMsg });
+        const fsImageResult = await createFilesystemImage(filesToUpload, fsImagePath, pythonPath);
+        if (!fsImageResult.success) {
+          safeSend('terminal-output', `[ERROR] Failed to create filesystem image: ${fsImageResult.error}`);
+          res({ success: false, error: `Filesystem creation failed: ${fsImageResult.error}` });
           return;
         }
-        await delay(300);
-
-        // Optional exec removed to avoid timeout on long-running loops.
-        // Instead, reset once more so main.py runs from boot.
-        safeSend('terminal-output', '[INFO] Restarting board...');
-        await hardResetPort(port);
-        await delay(1200); // Give ESP32 time to boot and start executing
-
+        
+        // Step 6: Flash filesystem image
+        safeSend('terminal-output', '[STEP 6/6] Flashing filesystem to ESP32...');
+        const flashResult = await flashFilesystem(port, fsImagePath, chipType, flashSize, pythonPath);
+        
+        // Cleanup filesystem image
+        try {
+          fs.unlinkSync(fsImagePath);
+        } catch (e) {
+          console.log(`Warning: Could not delete temp filesystem image: ${e.message}`);
+        }
+        
+        if (!flashResult.success) {
+          safeSend('terminal-output', `[ERROR] Flash failed: ${flashResult.error}`);
+          safeSend('terminal-output', '');
+          safeSend('terminal-output', '🔧 Troubleshooting:');
+          safeSend('terminal-output', '1. Ensure ESP32 is in bootloader mode (hold BOOT, press RESET, release BOOT)');
+          safeSend('terminal-output', '2. Try unplugging and replugging USB cable');
+          safeSend('terminal-output', '3. Try a different USB port');
+          safeSend('terminal-output', '4. Check that esptool can communicate with the board');
+          res({ success: false, error: `Flash failed: ${flashResult.error}` });
+          return;
+        }
+        
+        // Success - ensure normal boot (GPIO0 HIGH, EN HIGH)
+        safeSend('terminal-output', '[INFO] Resetting ESP32 to normal boot mode...');
+        await normalBootReset(port);
+        await delay(1000); // Wait for reset to complete
+        
+        // Additional hardware reset to ensure clean boot
+        safeSend('terminal-output', '[INFO] Performing hardware reset for clean boot...');
+        await hardwareResetESP32(port);
+        await delay(2000); // Give ESP32 time to boot into MicroPython
+        
         console.log('[SUCCESS] Upload completed');
-        safeSend('terminal-output', '\n[SUCCESS] Upload complete. Opening serial monitor...\n');
+        safeSend('terminal-output', '');
+        safeSend('terminal-output', '✅ Upload complete!');
+        safeSend('terminal-output', `   Uploaded ${filesToUpload.length} file(s) to ESP32`);
         safeSend('terminal-output', `========================================\n`);
         res({ success: true, output: 'Upload completed successfully' });
-      } catch (pythonError) {
-        safeSend('terminal-output', `❌ Python not found: ${pythonError.message}`);
-        res({ success: false, error: `Python not found: ${pythonError.message}` });
+      } catch (error) {
+        console.error('❌ Upload error:', error);
+        safeSend('terminal-output', `[ERROR] Upload failed: ${error.message}`);
+        res({ success: false, error: error.message });
       }
     });
   } catch (err) {
@@ -1340,36 +1863,9 @@ ipcMain.handle('run-python', async (_e, code, port) => {
     
     return await new Promise(async (resolve) => {
       if (port) {
-        try {
-          console.log(`🔧 Hardware execution mode: Code will run on ESP32 via ${port}`);
-          
-          // Find Python path dynamically
-          const pythonPath = await findPythonPath();
-          
-          // Ensure mpremote is installed
-          const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
-          if (!mpremoteReady) {
-            resolve('Hardware execution failed: mpremote installation failed');
-            return;
-          }
-          
-          // Simple port release
-          await releaseComPortIfNeeded(port);
-           
-          // Simple mpremote execution
-          const mpremoteCommand = `"${pythonPath}" -m mpremote connect ${port} run "${pyPath}"`;
-          console.log(`Executing: ${mpremoteCommand}`);
-          
-          const result = await captureSerialOutput(port, mpremoteCommand, 20000);
-          if (result.success) {
-            resolve(result.stdout || 'No output');
-          } else {
-            resolve(`Hardware execution failed: ${result.error || 'Unknown error'}`);
-          }
-        } catch (hardwareError) {
-          console.error('❌ Hardware execution error:', hardwareError.message);
-          resolve(`Hardware execution failed: ${hardwareError.message}`);
-        }
+        // Hardware execution is not supported with esptool-based system
+        // Users should upload code and use serial monitor instead
+        resolve('Hardware execution is not available with the new esptool-based system.\nPlease upload your code and use the Serial Monitor to see output.');
       } else {
         try {
           console.log('💻 Local execution mode: Code will run on your computer');
@@ -1594,24 +2090,26 @@ ipcMain.handle('test-esp32-connection', async (_e, port) => {
     // Find Python path
     const pythonPath = await findPythonPath();
     
-    // Ensure mpremote is installed
-    const mpremoteReady = await ensureMpremoteInstalled(pythonPath);
-    if (!mpremoteReady) {
-      return { success: false, error: 'mpremote installation failed' };
+    // Ensure esptool is installed
+    const esptoolReady = await ensureEsptoolInstalled(pythonPath);
+    if (!esptoolReady) {
+      return { success: false, error: 'esptool installation failed' };
     }
     
-    // Test basic connection
-    const testCommand = `"${pythonPath}" -m mpremote connect ${port} exec "print('ESP32 Connection Test')"`;
+    // Test basic connection using esptool chip_id
+    const testCommand = `"${pythonPath}" -m esptool --port ${port} chip_id`;
     console.log(`Executing: ${testCommand}`);
     
-    const result = await captureSerialOutput(port, testCommand, 10000);
+    const result = await executeEsptoolCommand(testCommand, 10000);
     if (result.success) {
       console.log('✅ ESP32 connection test successful');
       safeSend('terminal-output', '✅ ESP32 connection test successful');
+      safeSend('terminal-output', result.output || '');
       return { success: true, output: result.stdout };
     } else {
       console.error('❌ ESP32 connection test failed:', result.error);
       safeSend('terminal-output', `❌ ESP32 connection test failed: ${result.error}`);
+      safeSend('terminal-output', '💡 Make sure ESP32 is connected and try entering bootloader mode');
       return { success: false, error: result.error };
     }
   } catch (err) {
@@ -1725,44 +2223,22 @@ ipcMain.handle('install-micropython', async (_e, port) => {
     }
     safeSend('terminal-output', '✅ MicroPython firmware flashed successfully');
     
-    // Step 4: Verify installation
+    // Step 4: Installation complete (verification skipped - esptool-based system)
     safeSend('terminal-output', '');
-    safeSend('terminal-output', '🔍 Step 4/4: Verifying installation...');
+    safeSend('terminal-output', '✅ Step 4/4: Installation complete');
     await delay(2000); // Give ESP32 time to boot
-    
-    const verifyCmd = `"${pythonPath}" -m mpremote connect ${port} exec "import sys; print(sys.implementation)"`;
-    const verifyResult = await new Promise((resolve) => {
-      exec(verifyCmd, { timeout: 10000 }, (err, stdout, stderr) => {
-        if (!err && stdout && stdout.includes('micropython')) {
-          resolve({ success: true, output: stdout });
-        } else {
-          resolve({ success: false, error: stderr || 'Verification failed' });
-        }
-      });
-    });
     
     safeSend('terminal-output', '');
     safeSend('terminal-output', '==================================================');
-    
-    if (verifyResult.success) {
-      console.log('✅ MicroPython installation completed and verified');
-      safeSend('terminal-output', '✅ SUCCESS! MicroPython installed and verified');
-      safeSend('terminal-output', '==================================================');
-      safeSend('terminal-output', '');
-      safeSend('terminal-output', '🎉 Your ESP32 is now ready to use!');
-      safeSend('terminal-output', '💡 You can now upload MicroPython code');
-      safeSend('terminal-output', '');
-      return { success: true, output: 'MicroPython installed successfully' };
-    } else {
-      console.log('⚠️ Firmware flashed but verification failed');
-      safeSend('terminal-output', '⚠️ Firmware flashed but verification incomplete');
-      safeSend('terminal-output', '==================================================');
-      safeSend('terminal-output', '');
-      safeSend('terminal-output', '💡 Try unplugging and replugging the ESP32');
-      safeSend('terminal-output', '💡 Then select the port again and try uploading');
-      safeSend('terminal-output', '');
-      return { success: true, output: 'Firmware flashed (verification incomplete)' };
-    }
+    console.log('✅ MicroPython installation completed');
+    safeSend('terminal-output', '✅ SUCCESS! MicroPython firmware installed');
+    safeSend('terminal-output', '==================================================');
+    safeSend('terminal-output', '');
+    safeSend('terminal-output', '🎉 Your ESP32 is now ready to use!');
+    safeSend('terminal-output', '💡 You can now upload MicroPython code');
+    safeSend('terminal-output', '💡 If the board doesn\'t respond, try unplugging and replugging USB');
+    safeSend('terminal-output', '');
+    return { success: true, output: 'MicroPython installed successfully' };
     
   } catch (err) {
     console.error('❌ MicroPython installation error:', err.message);

@@ -8,14 +8,32 @@
   },
 
   "build": {
-  "appId": "com.yourcompany.mysteamlabs",
-  "productName": "My Steam Labs",
-  "icon": "ui/assets/logo.jpg",
-  "win": {
-    "target": "nsis",
-    "icon": "ui/assets/logo.jpg"
-  }
-},
+    "appId": "com.yourcompany.mysteamlabs",
+    "productName": "My Steam Labs",
+    "icon": "ui/assets/logo.jpg",
+    "win": {
+      "target": "nsis",
+      "icon": "ui/assets/logo.jpg"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/**/*",
+      "!mklittlefs.exe"
+    ],
+    "extraResources": [
+      {
+        "from": "mklittlefs.exe",
+        "to": ".",
+        "filter": ["**/*"]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
 
   "devDependencies": {
     "electron": "^27.0.0",

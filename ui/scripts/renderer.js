@@ -726,22 +726,40 @@ async function uploadCode() {
       if (language === 'python' && currentPort) {
         console.log('🔍 [SERIAL MONITOR] Attempting to reopen serial monitor...');
         appendTerminalOutput(`[INFO] Opening serial monitor...`);
-        await new Promise(resolve => setTimeout(resolve, 1500)); // wait for board to boot
+        await new Promise(resolve => setTimeout(resolve, 2500)); // wait longer for board to fully boot
         
         try {
           await openSerialMonitor(currentPort, false);
           console.log('🔍 [SERIAL MONITOR] Serial monitor opened successfully');
           
-          // CRITICAL: Send Ctrl+D to trigger MicroPython soft reset
-          // This makes the ESP32 re-run main.py and start sending output
-          await new Promise(resolve => setTimeout(resolve, 500));
-          console.log('🔍 [SERIAL MONITOR] Sending Ctrl+D to trigger main.py execution...');
+          // CRITICAL: Wake up REPL and trigger MicroPython soft reset
+          // The ESP32 might be in a state where it needs to be woken up first
+          await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for REPL to be ready
+          console.log('🔍 [SERIAL MONITOR] Waking up REPL and triggering main.py execution...');
           try {
+            // Step 1: Send Enter/Return to wake up the REPL (some boards need this)
+            await window.electronAPI.sendSerialData(currentPort, '\r\n');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Step 2: Send Ctrl+C to interrupt any running code (if any)
+            await window.electronAPI.sendSerialData(currentPort, '\x03'); // Ctrl+C = interrupt
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Step 3: Send Ctrl+D to trigger MicroPython soft reset and run main.py
             await window.electronAPI.sendSerialData(currentPort, '\x04'); // Ctrl+D = soft reset
-            console.log('🔍 [SERIAL MONITOR] Soft reset sent, main.py should start executing');
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await window.electronAPI.sendSerialData(currentPort, '\x04'); // Send again for reliability
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Step 4: Send one more Enter to ensure REPL is active
+            await window.electronAPI.sendSerialData(currentPort, '\r\n');
+            
+            console.log('🔍 [SERIAL MONITOR] Soft reset sequence sent, main.py should start executing');
             appendTerminalOutput(`[INFO] Executing code on ESP32...`);
+            appendTerminalOutput(`[INFO] If no output appears, the code may be running silently or waiting for input.\n`);
           } catch (ctrlDErr) {
-            console.warn('⚠️ [SERIAL MONITOR] Failed to send Ctrl+D:', ctrlDErr);
+            console.warn('⚠️ [SERIAL MONITOR] Failed to send reset sequence:', ctrlDErr);
+            appendTerminalOutput(`[WARNING] Failed to send reset sequence. Try pressing RESET button manually.\n`);
           }
           
           appendTerminalOutput(`[INFO] Waiting for output... (press RESET button if nothing appears)\n`);
@@ -1337,4 +1355,3 @@ waitForElement('checkConnectionBtn', () => {
 waitForElement('testEsp32Btn', () => {
   setupEsp32ConnectionTest();
 });
-
