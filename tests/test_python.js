@@ -56,49 +56,47 @@ print("Unique ID:", machine.unique_id())`;
     console.log(`   ❌ Error creating test file: ${err.message}`);
   }
 
-  // Test 3: Test mpremote availability
-  console.log('\n3. Testing mpremote:');
+  // Test 3: Test esptool availability (ESP32 uploads use esptool)
+  console.log('\n3. Testing esptool:');
   // Try different Python executables for Windows compatibility
   const pythonCommands = ['python', 'python3', 'py'];
   let currentIndex = 0;
   
-  const tryMpremote = () => {
+  const tryEsptool = () => {
     if (currentIndex >= pythonCommands.length) {
       console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
       return;
     }
     
     const pythonCmd = pythonCommands[currentIndex];
-    exec(`"${pythonCmd}" -m mpremote --version`, (err, stdout, stderr) => {
+    exec(`"${pythonCmd}" -m esptool version`, (err, stdout, stderr) => {
       if (err) {
-        console.log(`   ❌ mpremote not found with '${pythonCmd}'`);
+        console.log(`   ❌ esptool not found with '${pythonCmd}'`);
         currentIndex++;
-        tryMpremote();
+        tryEsptool();
       } else {
-        console.log(`   ✅ mpremote available with '${pythonCmd}': ${stdout.trim()}`);
+        const out = (stdout || stderr || '').trim();
+        console.log(`   ✅ esptool available with '${pythonCmd}': ${out.split('\n')[0]}`);
       }
     });
   };
   
-  tryMpremote();
+  tryEsptool();
 
-  // Test 4: Test serial port detection
+  // Test 4: Test serial port detection (migrated to Python)
   console.log('\n4. Testing Serial Port Detection:');
   try {
-    const { SerialPort } = require('serialport');
-    const ports = await SerialPort.list();
-    console.log(`   ✅ Found ${ports.length} serial port(s):`);
-    ports.forEach(port => {
-      console.log(`      - ${port.path} (${port.manufacturer || 'Unknown'})`);
-    });
+    // NOTE: SerialPort removed - migrated to Python-based serial handling
+    console.log('   ℹ️  Serial port detection migrated to Python (pyserial)');
+    console.log('   ℹ️  Run: python -c "import serial.tools.list_ports; print(list(serial.tools.list_ports.comports()))"');
   } catch (err) {
-    console.log(`   ❌ Error listing ports: ${err.message}`);
+    console.log(`   ❌ Error: ${err.message}`);
   }
 
   console.log('\n📋 Test Summary:');
   console.log('   - Python code generation should work correctly');
   console.log('   - Language detection should be fixed');
-  console.log('   - mpremote should be available for ESP32');
+  console.log('   - esptool should be available for ESP32 uploads');
   console.log('   - Serial ports should be detected');
 }
 

@@ -314,22 +314,12 @@ def install_library(library_name, port=DEFAULT_PORT):
         print(f"Library '{library_name}' not found!")
         return False
     
-    try:
-        cmd = f'python -m mpremote connect {port} fs cp "{file_path}" :{library_name}.py'
-        print(f"Installing {library_name} to ESP32 on {port}...")
-        
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            print(f"✅ {library_name} installed successfully!")
-            return True
-        else:
-            print(f"❌ Failed to install {library_name}: {result.stderr}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error installing {library_name}: {e}")
-        return False
+    # mpremote was removed from the project. Libraries are bundled into the filesystem image
+    # and flashed using esptool from inside the Steam Labs app.
+    print("❌ mpremote has been removed from Steam Labs.")
+    print("✅ Use Steam Labs Upload to install libraries (esptool + filesystem image).")
+    print("ℹ️  If your program imports this library, Steam Labs will include it automatically during Upload.")
+    return False
 
 def test_library(library_name, port=DEFAULT_PORT):
     """Test a library on ESP32"""
@@ -351,25 +341,8 @@ def test_library(library_name, port=DEFAULT_PORT):
         print(f"Pins: {lib_info['pins']}")
         print("-" * 40)
         
-        # Upload and run test
-        cmd = f'python -m mpremote connect {port} fs cp "{test_file}" :test.py'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            print("Test uploaded successfully!")
-            print("Running test...")
-            
-            # Run the test
-            run_cmd = f'python -m mpremote connect {port} run test.py'
-            run_result = subprocess.run(run_cmd, shell=True, capture_output=True, text=True, timeout=30)
-            
-            if run_result.returncode == 0:
-                print("Test output:")
-                print(run_result.stdout)
-                print("✅ Test completed!")
-            else:
-                print("❌ Test failed:")
-                print(run_result.stderr)
+        print("❌ mpremote has been removed from Steam Labs.")
+        print("✅ Run tests via the Steam Labs app: Upload -> Serial Monitor.")
         
         # Clean up
         os.remove(test_file)
@@ -538,7 +511,7 @@ def main():
     elif command == "test-all":
         port = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_PORT
         create_test_script()
-        print("Run: python -m mpremote connect COM6 run comprehensive_test.py")
+        print("Run tests via Steam Labs (Upload -> Serial Monitor).")
     
     elif command == "setup":
         setup_libraries_folder()

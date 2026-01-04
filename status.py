@@ -21,14 +21,7 @@ def is_board_connected():
             if identifier.lower() in description or identifier.lower() in manufacturer:
                 return True
     
-    # Also check if mpremote can find any devices
-    try:
-        result = subprocess.run(['mpremote', 'list'], 
-                              capture_output=True, text=True, timeout=5)
-        if result.returncode == 0 and result.stdout.strip():
-            return True
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    # NOTE: mpremote was removed from the project. Connectivity is validated via pyserial/esptool elsewhere.
     
     return False
 

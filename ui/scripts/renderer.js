@@ -3,11 +3,15 @@ console.log('⚡ renderer.js loaded');
 let currentPort = null;
 let currentBoardType = null; // NEW: Track board type
 let currentLanguage = 'python'; // Default language
+let isSerialMonitorOpen = false; // Track serial monitor state to prevent conflicts
 let lastGeneratedLanguage = 'python'; // Track last generated language
 let lastCompiledPath = null;
 let lastCompiledSuccess = false;
 let isRunning = false;
 let isUploading = false;
+let suppressEsp32Output = false; // When true, ignore incoming serial data (used when editor is empty)
+let lastEditorEmptyState = null; // null=unknown, true=empty, false=has code
+let lastPortPresenceState = null; // null=unknown, true=present, false=missing
 
 // Terminal output functions
 function appendTerminalOutput(message) {
@@ -119,6 +123,90 @@ function getCurrentCode() {
   
   console.log('❌ Editor not ready - getEditorValue function not available');
   return '';
+}
+
+// Lightweight editor peek (no logging) for frequent polling
+function peekEditorCode() {
+  try {
+    const iframe = document.getElementById('monacoEditor');
+    const editorWindow = iframe && iframe.contentWindow;
+    if (!editorWindow || !editorWindow.getEditorValue) return '';
+    const v = editorWindow.getEditorValue();
+    return typeof v === 'string' ? v : '';
+  } catch (_e) {
+    return '';
+  }
+}
+
+function setRunUploadButtonsEnabled(enabled) {
+  const runBtn = document.getElementById('runBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  if (runBtn) runBtn.disabled = !enabled;
+  if (uploadBtn) uploadBtn.disabled = !enabled;
+}
+
+async function handleEditorEmptyState(isEmpty) {
+  // Only act on transitions
+  if (lastEditorEmptyState === isEmpty) return;
+  lastEditorEmptyState = isEmpty;
+
+  if (isEmpty) {
+    suppressEsp32Output = true;
+    setRunUploadButtonsEnabled(false);
+
+    // Student-safe: stop showing ESP32 output by closing the Serial Monitor process.
+    if (isSerialMonitorOpen) {
+      try {
+        appendTerminalOutput('[INFO] Editor is empty. Closing Serial Monitor...');
+        await window.electronAPI.closeSerialPort();
+      } catch (e) {
+        // Best-effort; don’t spam errors
+        console.log('Note: closeSerialPort failed:', e?.message || e);
+      } finally {
+        isSerialMonitorOpen = false;
+      }
+    }
+  } else {
+    suppressEsp32Output = false;
+    // Re-enable controls when code exists again (user explicitly uploads/runs)
+    setRunUploadButtonsEnabled(true);
+  }
+}
+
+function clearSelectedPortUI() {
+  try {
+    const portSelect = document.getElementById('portSelect');
+    if (portSelect) portSelect.value = '';
+  } catch (_e) {}
+}
+
+function handlePortDisconnected(reason = 'Port disconnected') {
+  // Avoid spam
+  if (lastPortPresenceState === false) return;
+  lastPortPresenceState = false;
+
+  suppressEsp32Output = true;
+  isSerialMonitorOpen = false;
+  currentPort = null;
+  currentBoardType = null;
+  clearSelectedPortUI();
+
+  appendTerminalOutput(`[ERROR] ${reason}`);
+  appendTerminalOutput('[INFO] Replug the USB cable, then click Refresh Ports and select the port again.');
+
+  // Disable actions until the user selects a port again (or code changes to local)
+  setRunUploadButtonsEnabled(false);
+}
+
+function handlePortConnectedAgain(portPath) {
+  if (lastPortPresenceState === true) return;
+  lastPortPresenceState = true;
+  suppressEsp32Output = false;
+
+  if (portPath) {
+    appendTerminalOutput(`[SUCCESS] Port detected again: ${portPath}`);
+    appendTerminalOutput('[INFO] Select the port and Upload again.');
+  }
 }
 
 // Get current language from Monaco editor or last generated language
@@ -680,11 +768,12 @@ async function uploadCode() {
     return;
   }
   
-  // CRITICAL: Close serial monitor before upload (mpremote needs exclusive port access)
+  // CRITICAL: Close serial monitor before upload (esptool needs exclusive port access)
   if (currentPort && language === 'python') {
     appendTerminalOutput(`[INFO] Closing serial monitor for upload...`);
     try {
       await window.electronAPI.closeSerialPort();
+      isSerialMonitorOpen = false;
       await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay
     } catch (closeErr) {
       console.log(`Warning: Error closing serial port: ${closeErr.message}`);
@@ -732,37 +821,14 @@ async function uploadCode() {
           await openSerialMonitor(currentPort, false);
           console.log('🔍 [SERIAL MONITOR] Serial monitor opened successfully');
           
-          // CRITICAL: Wake up REPL and trigger MicroPython soft reset
-          // The ESP32 might be in a state where it needs to be woken up first
-          await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for REPL to be ready
-          console.log('🔍 [SERIAL MONITOR] Waking up REPL and triggering main.py execution...');
-          try {
-            // Step 1: Send Enter/Return to wake up the REPL (some boards need this)
-            await window.electronAPI.sendSerialData(currentPort, '\r\n');
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // Step 2: Send Ctrl+C to interrupt any running code (if any)
-            await window.electronAPI.sendSerialData(currentPort, '\x03'); // Ctrl+C = interrupt
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // Step 3: Send Ctrl+D to trigger MicroPython soft reset and run main.py
-            await window.electronAPI.sendSerialData(currentPort, '\x04'); // Ctrl+D = soft reset
-            await new Promise(resolve => setTimeout(resolve, 200));
-            await window.electronAPI.sendSerialData(currentPort, '\x04'); // Send again for reliability
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-            // Step 4: Send one more Enter to ensure REPL is active
-            await window.electronAPI.sendSerialData(currentPort, '\r\n');
-            
-            console.log('🔍 [SERIAL MONITOR] Soft reset sequence sent, main.py should start executing');
-            appendTerminalOutput(`[INFO] Executing code on ESP32...`);
-            appendTerminalOutput(`[INFO] If no output appears, the code may be running silently or waiting for input.\n`);
-          } catch (ctrlDErr) {
-            console.warn('⚠️ [SERIAL MONITOR] Failed to send reset sequence:', ctrlDErr);
-            appendTerminalOutput(`[WARNING] Failed to send reset sequence. Try pressing RESET button manually.\n`);
-          }
+          // CRITICAL: After esptool hard reset, ESP32 needs 2-3 seconds to boot MicroPython
+          // DO NOT send commands during boot - this causes [Send Error]: Exit code 1
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for MicroPython to fully boot
           
-          appendTerminalOutput(`[INFO] Waiting for output... (press RESET button if nothing appears)\n`);
+          // MicroPython automatically runs main.py after boot - no commands needed!
+          console.log('🔍 [SERIAL MONITOR] MicroPython booted, main.py should be running');
+          appendTerminalOutput(`[RESET] ESP32 reset complete. Waiting for MicroPython boot...`);
+          appendTerminalOutput(`[SERIAL] Listening for MicroPython output (main.py runs automatically).`);
         } catch (monitorErr) {
           console.error('❌ [SERIAL MONITOR] Error opening:', monitorErr);
           appendTerminalOutput(`[WARNING] Error opening serial monitor: ${monitorErr.message}`);
@@ -807,76 +873,91 @@ async function runCode() {
     return;
   }
   
-  // Check if Python code needs hardware (contains hardware-specific imports/modules)
+  // EXECUTION MODE VALIDATION: Prevent MicroPython from running locally
   if (language === 'python') {
     const needsHardware = needsHardwarePort(code);
     
-    if (needsHardware && !currentPort) {
-      console.log('❌ Port validation failed: Python code uses hardware modules but no port selected');
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('[INFO] This code requires hardware connection');
-      return;
-    }
-    
     if (needsHardware) {
-      console.log('✅ Python code uses hardware modules, port validation passed');
-      appendTerminalOutput('🔧 Hardware execution mode: Code will run on ESP32');
+      // MicroPython code detected - BLOCK Run button, force Upload instead
+      console.log('🚫 MicroPython code detected - Run button is disabled for hardware code');
+      appendTerminalOutput('❌ This is MicroPython code - cannot run locally!');
+      appendTerminalOutput('[INFO] Use the UPLOAD button to flash to ESP32');
+      appendTerminalOutput('[INFO] The Run button is ONLY for standard Python (no hardware modules)');
+      return; // STOP HERE
     } else {
-      console.log('✅ Standard Python code, will run locally');
-      appendTerminalOutput('💻 Local execution mode: Code will run on your computer');
+      // Standard Python - safe to run locally
+      console.log('✅ Standard Python code detected - safe for local execution');
+      appendTerminalOutput('💻 [LOCAL] Running standard Python on your computer...');
     }
   } else if (language === 'cpp') {
     const needsHardware = needsHardwarePortCpp(code);
     
-    if (needsHardware && !currentPort) {
-      console.log('❌ Port validation failed: C++ code uses hardware modules but no port selected');
-      appendTerminalOutput('❌ No port selected. Please select a port first.');
-      appendTerminalOutput('[INFO] This C++ code requires hardware connection');
-      return;
-    }
-    
     if (needsHardware) {
-      console.log('✅ C++ code uses hardware modules, port validation passed');
-      appendTerminalOutput('🔧 Hardware execution mode: Code will run on ESP32/Arduino');
+      // Arduino/ESP32 C++ code detected - BLOCK Run button, force Upload instead
+      console.log('🚫 Arduino/ESP32 C++ code detected - Run button is disabled for hardware code');
+      appendTerminalOutput('❌ This is Arduino/ESP32 C++ code - cannot run locally!');
+      appendTerminalOutput('[INFO] Use the UPLOAD button to flash to hardware');
+      appendTerminalOutput('[INFO] The Run button is ONLY for standard C++ (no Arduino.h/ESP32.h)');
+      return; // STOP HERE
     } else {
-      console.log('✅ Standard C++ code, will run locally');
-      appendTerminalOutput('💻 Local execution mode: Code will run on your computer');
+      // Standard C++ - safe to run locally
+      console.log('✅ Standard C++ code detected - safe for local execution');
+      appendTerminalOutput('💻 [LOCAL] Running standard C++ on your computer...');
     }
   }
   
-  appendTerminalOutput(`\n[RUN] Executing ${language} code...`);
-  
+  // CRITICAL EXECUTION STATE MACHINE: Prevent dual execution
   try {
     let result;
     switch (language) {
       case 'python':
-        // Only pass port if code actually needs hardware
         const needsHardware = needsHardwarePort(code);
-        const portToUse = needsHardware ? currentPort : null;
-        console.log(`🎯 Python execution: needsHardware=${needsHardware}, portToUse=${portToUse}`);
+        
+        // MUTUALLY EXCLUSIVE MODES:
         if (needsHardware) {
-          appendTerminalOutput(`🔌 Using hardware port: ${portToUse}`);
+          // MODE 1: ESP32/Hardware Mode - BLOCK local execution
+          console.log('🚫 BLOCKING Run: This is MicroPython code - must use Upload button');
+          appendTerminalOutput(`\n❌ Cannot run MicroPython code locally!`);
+          appendTerminalOutput(`[INFO] This code uses hardware modules (machine, Pin, etc.)`);
+          appendTerminalOutput(`[INFO] Use the UPLOAD button to flash code to ESP32`);
+          appendTerminalOutput(`[INFO] Then open Serial Monitor to see output from ESP32`);
+          return; // STOP HERE - do not execute locally
         } else {
-          appendTerminalOutput(`💻 Running locally (no port needed)`);
+          // MODE 2: Local Python Mode - ONLY if no hardware detected
+          console.log('✅ Local Python execution: Standard Python code, no hardware modules');
+          appendTerminalOutput(`\n[LOCAL] Running standard Python code on your computer...`);
+          result = await window.electronAPI.runPython(code, null); // null = no port = local execution
+          appendTerminalOutput(`[LOCAL] Execution output:`);
         }
-        result = await window.electronAPI.runPython(code, portToUse);
         break;
       case 'javascript':
+        appendTerminalOutput(`\n[LOCAL] Running JavaScript code on your computer...`);
         result = await window.electronAPI.runJavaScript(code);
+        appendTerminalOutput(`[LOCAL] Execution output:`);
         break;
       case 'cpp':
+        appendTerminalOutput(`\n[LOCAL] Running C++ code on your computer...`);
         result = await window.electronAPI.runCpp(code);
+        appendTerminalOutput(`[LOCAL] Execution output:`);
         break;
       case 'c':
+        appendTerminalOutput(`\n[LOCAL] Running C code on your computer...`);
         result = await window.electronAPI.runC(code);
+        appendTerminalOutput(`[LOCAL] Execution output:`);
         break;
       default:
         appendTerminalOutput(`[ERROR] Unsupported language for running: ${language}`);
         return;
     }
     
-    appendTerminalOutput(`📋 Execution output:`);
-    appendTerminalOutput(result);
+    // Display execution result with [LOCAL] prefix for clarity
+    if (result && result.trim()) {
+      result.split('\n').forEach(line => {
+        if (line.trim()) {
+          appendTerminalOutput(`[LOCAL] ${line}`);
+        }
+      });
+    }
   } catch (error) {
     appendTerminalOutput(`[ERROR] Execution error: ${error.message}`);
   }
@@ -993,6 +1074,7 @@ async function openSerialMonitor(portPath, silent = false) {
   console.log(`🔌 [SERIAL MONITOR] Result:`, result);
   
   if (result && result.success) {
+    isSerialMonitorOpen = true;
     if (!silent) {
       appendTerminalOutput(`[SUCCESS] Serial monitor opened on ${portPath} at ${ESP32_BAUD_RATE} baud`);
       appendTerminalOutput(`[INFO] Listening for output...\n`);
@@ -1035,13 +1117,20 @@ async function selectPort(portPath, silent = false) {
 
 // Event listeners for serial data - Enhanced Serial Monitor
 window.electronAPI.onSerialData((data) => {
+  if (suppressEsp32Output) return;
   // Mirror raw data to browser console for debugging
   console.log('🔌 [SERIAL DATA]', data);
 
-  // Display serial data in terminal (Serial Monitor)
+  // Display serial data in terminal (Serial Monitor) with [ESP32] prefix
   const trimmedData = (data || '').trim();
   if (trimmedData) {
-    appendTerminalOutput(trimmedData);
+    // Prefix ESP32 output to distinguish from local execution
+    // Skip prefix for meta messages that already have brackets
+    if (trimmedData.startsWith('[') || trimmedData.startsWith('>>>')) {
+      appendTerminalOutput(trimmedData); // Keep meta messages as-is
+    } else {
+      appendTerminalOutput(`[ESP32] ${trimmedData}`); // Add prefix to actual ESP32 output
+    }
     // Note: appendTerminalOutput already handles auto-scroll
   }
 });
@@ -1057,8 +1146,7 @@ async function sendSerialData(data) {
     // Send data via serial port
     // Note: This requires a new IPC handler in main.js
     appendTerminalOutput(`[SEND] ${data}`);
-    // The actual sending will be handled by the main process
-    // For now, we'll use mpremote to send data
+    // The actual sending is handled by the main process via the Python serial helper
     const result = await window.electronAPI.sendSerialData(currentPort, data);
     if (result && result.success) {
       appendTerminalOutput('[SUCCESS] Data sent successfully');
@@ -1167,6 +1255,13 @@ function setupEsp32ConnectionTest() {
         appendTerminalOutput('❌ No port selected. Please select a port first.');
         return;
       }
+
+      // IMPORTANT: This test uses esptool and will conflict with an open serial monitor on Windows.
+      if (isSerialMonitorOpen) {
+        appendTerminalOutput('❌ Close Serial Monitor before testing ESP32 connection.');
+        appendTerminalOutput('[INFO] Reason: avoids COM port conflicts (Access is denied).');
+        return;
+      }
       
       appendTerminalOutput(`[INFO] Testing ESP32 connection on ${currentPort}...`);
       
@@ -1188,6 +1283,36 @@ function setupEsp32ConnectionTest() {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   console.log('✅ DOM ready, setting up event listeners...');
+
+  // Poll editor state and auto-stop Serial Monitor when editor becomes empty
+  setInterval(() => {
+    const code = peekEditorCode();
+    const empty = !code || !code.trim();
+    handleEditorEmptyState(empty);
+  }, 750);
+
+  // Watch for USB disconnects: if the selected port disappears, notify immediately and reset UI.
+  // This avoids the confusing "waiting..." state during uploads when the cable is unplugged.
+  setInterval(async () => {
+    try {
+      if (!currentPort) {
+        lastPortPresenceState = null;
+        return;
+      }
+
+      const ports = await window.electronAPI.listSerialPorts();
+      const present = Array.isArray(ports) && ports.some(p => p && p.path === currentPort);
+
+      if (!present) {
+        handlePortDisconnected(`Port ${currentPort} was disconnected or changed`);
+      } else {
+        handlePortConnectedAgain(currentPort);
+      }
+    } catch (e) {
+      // Ignore transient listing errors; don't spam the terminal.
+      console.log('Note: port presence check failed:', e?.message || e);
+    }
+  }, 1500);
   
   // Setup port selection
   setupPortSelection();

@@ -1,0 +1,6 @@
+# Python requirements for My Steam Labs
+# Install with: pip install -r requirements.txt
+
+esptool>=4.5.0
+pyserial>=3.5
+

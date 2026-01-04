@@ -2,15 +2,188 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { exec, spawn } = require('child_process');
-const { SerialPort } = require('serialport');
 const os = require('os');
+
+// ========================================
+// NO MORE SERIALPORT - Using Python instead!
+// ========================================
 
 let mainWindow;
 let currentPort = null;
+let serialMonitorProcess = null;
+
+// ========================================
+// Path Helper for Packaged App
+// ========================================
+
+/**
+ * Get correct path for Python scripts in both dev and production
+ * @param {string} scriptName - Name of Python script
+ * @returns {string} Full path to script
+ */
+function getScriptPath(scriptName) {
+  // Check if app is packaged
+  if (app.isPackaged) {
+    // In packaged app, scripts are in resources/app/
+    return path.join(process.resourcesPath, 'app', scriptName);
+  } else {
+    // In development, scripts are in app/
+    return path.join(__dirname, scriptName);
+  }
+}
 
 // Utility: wait for ms
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ========================================
+// Python-based Serial Port Helper Functions
+// (Replaces node-serialport completely)
+// ========================================
+
+/**
+ * Execute Python serial helper script
+ * @param {string} pythonPath - Path to Python executable
+ * @param {Array} args - Arguments for serial-helper.py
+ * @returns {Promise<Object>} Result object
+ */
+async function executePythonSerial(pythonPath, args) {
+  return new Promise((resolve) => {
+    const scriptPath = getScriptPath('serial-helper.py');
+    const command = `"${pythonPath}" "${scriptPath}" ${args.map(a => `"${a}"`).join(' ')}`;
+    
+    // Use spawn for better process control
+    const pythonProcess = spawn(pythonPath, [scriptPath, ...args], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    
+    let stdout = '';
+    let stderr = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`Python serial error (code ${code}): ${stderr}`);
+        resolve({ success: false, error: stderr || `Exit code ${code}` });
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout.trim());
+        resolve(result);
+      } catch (parseErr) {
+        console.error(`Failed to parse Python output: ${stdout}`);
+        resolve({ success: false, error: 'Failed to parse Python output', raw: stdout });
+      }
+    });
+    
+    pythonProcess.on('error', (err) => {
+      console.error(`Python process error: ${err.message}`);
+      resolve({ success: false, error: err.message });
+    });
+    
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      try {
+        pythonProcess.kill('SIGKILL');
+      } catch (e) {}
+      resolve({ success: false, error: 'Timeout after 10 seconds' });
+    }, 10000);
+  });
+}
+
+/**
+ * List all serial ports using Python
+ * @param {string} pythonPath - Path to Python executable
+ * @returns {Promise<Array>} Array of port objects
+ */
+async function listSerialPorts(pythonPath) {
+  try {
+    const result = await executePythonSerial(pythonPath, ['list']);
+    if (result.success && result.ports) {
+      return result.ports;
+    }
+    console.error('Failed to list ports:', result.error);
+    return [];
+  } catch (error) {
+    console.error('Exception listing ports:', error);
+    return [];
+  }
+}
+
+/**
+ * Hardware reset ESP32 using Python
+ * @param {string} pythonPath - Path to Python executable
+ * @param {string} portPath - COM port path
+ * @param {string} mode - 'normal' or 'bootloader'
+ * @returns {Promise<boolean>} Success status
+ */
+async function hardwareResetPython(pythonPath, portPath, mode = 'normal') {
+  try {
+    const result = await executePythonSerial(pythonPath, ['reset', portPath, mode]);
+    return result.success === true;
+  } catch (error) {
+    console.error(`Hardware reset error: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Test serial port connection using Python
+ * @param {string} pythonPath - Path to Python executable
+ * @param {string} portPath - COM port path
+ * @returns {Promise<boolean>} Success status
+ */
+async function testSerialConnection(pythonPath, portPath) {
+  try {
+    const result = await executePythonSerial(pythonPath, ['test', portPath]);
+    return result.success === true;
+  } catch (error) {
+    console.error(`Port test error: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Verify if port exists in system using Python
+ * @param {string} pythonPath - Path to Python executable
+ * @param {string} portPath - COM port path
+ * @returns {Promise<Object>} Result with exists status
+ */
+async function verifyPortExists(pythonPath, portPath) {
+  try {
+    const scriptPath = getScriptPath('verify-port.py');
+    const command = `"${pythonPath}" "${scriptPath}" "${portPath}"`;
+    
+    const result = await new Promise((resolve) => {
+      exec(command, { timeout: 5000 }, (err, stdout, stderr) => {
+        if (err) {
+          resolve({ success: false, exists: false, error: err.message });
+          return;
+        }
+        
+        try {
+          const parsed = JSON.parse(stdout.trim());
+          resolve(parsed);
+        } catch (parseErr) {
+          resolve({ success: false, exists: false, error: 'Failed to parse output' });
+        }
+      });
+    });
+    
+    return result;
+  } catch (error) {
+    return { success: false, exists: false, error: error.message };
+  }
 }
 
 // Utility: detect board type based on port information (vendor, product, manufacturer)
@@ -107,14 +280,14 @@ async function ensureEsptoolInstalled(pythonPath) {
 }
 
 // Utility: detect ESP32 chip type and flash size
-async function detectESP32Chip(portPath, pythonPath) {
+async function detectESP32Chip(portPath, pythonPath, timeoutMs = 10000) {
   try {
     console.log(`🔍 Detecting ESP32 chip type on ${portPath}...`);
     safeSend('terminal-output', `[INFO] Detecting ESP32 chip type...`);
     
     const chipCmd = `"${pythonPath}" -m esptool --port ${portPath} chip_id`;
     const result = await new Promise((resolve) => {
-      exec(chipCmd, { timeout: 10000 }, (err, stdout, stderr) => {
+      exec(chipCmd, { timeout: timeoutMs }, (err, stdout, stderr) => {
         if (err) {
           resolve({ success: false, error: stderr || err.message });
         } else {
@@ -163,6 +336,84 @@ async function detectESP32Chip(portPath, pythonPath) {
       error: error.message 
     };
   }
+}
+
+function isTransientComPortError(errorText = '') {
+  const t = String(errorText || '').toLowerCase();
+  return (
+    t.includes('port is busy') ||
+    t.includes("busy or doesn't") ||
+    t.includes('busy or doesn') ||
+    t.includes('permissionerror') ||
+    t.includes('cannot configure port') ||
+    t.includes('the device attached to the system is not functioning') ||
+    t.includes('winerror 31') ||
+    t.includes('clearcommerror') ||
+    t.includes('file not found') ||
+    t.includes('filenotfounderror') ||
+    t.includes('could not open com')
+  );
+}
+
+async function waitForPortPresent(pythonPath, portPath, timeoutMs = 15000, intervalMs = 500, stableHitsRequired = 2) {
+  const start = Date.now();
+  let stableHits = 0;
+
+  while (Date.now() - start < timeoutMs) {
+    const check = await verifyPortExists(pythonPath, portPath);
+    if (check && check.exists) {
+      stableHits += 1;
+      if (stableHits >= stableHitsRequired) return true;
+    } else {
+      stableHits = 0;
+    }
+    await delay(intervalMs);
+  }
+  return false;
+}
+
+async function detectESP32ChipWithRetry(portPath, pythonPath, maxAttempts = 5) {
+  let lastErr = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      safeSend('terminal-output', `[INFO] Detect attempt ${attempt}/${maxAttempts}...`);
+
+      // Windows sometimes needs time after a reset for the COM device to be healthy again.
+      await killEsptoolProcesses();
+      await delay(600);
+
+      const present = await waitForPortPresent(pythonPath, portPath, 15000, 500, 2);
+      if (!present) {
+        lastErr = `Port ${portPath} not ready yet`;
+        safeSend('terminal-output', `[WARNING] ${lastErr}`);
+        continue;
+      }
+
+      const result = await detectESP32Chip(portPath, pythonPath, 15000);
+      if (result && result.success) return result;
+
+      lastErr = result?.error || 'Unknown esptool error';
+      if (!isTransientComPortError(lastErr)) {
+        return { success: false, error: lastErr };
+      }
+
+      safeSend('terminal-output', `[WARNING] Transient COM issue detected (will retry): ${lastErr}`);
+
+      // Recovery sequence tuned for flashing reliability:
+      // - avoid "normal" resets (can kick the board out of bootloader)
+      await recoverPortState(portPath, 'bootloader');
+      await delay(1200 + attempt * 400);
+    } catch (e) {
+      lastErr = e?.message || String(e);
+      if (!isTransientComPortError(lastErr)) break;
+      safeSend('terminal-output', `[WARNING] Transient COM issue detected (will retry): ${lastErr}`);
+      await recoverPortState(portPath, 'bootloader');
+      await delay(1200 + attempt * 400);
+    }
+  }
+
+  return { success: false, error: lastErr || 'ESP32 detection failed after retries' };
 }
 
 // Utility: detect what firmware is on the board (using esptool read-flash)
@@ -294,66 +545,22 @@ async function findPythonPath() {
 // This is the fixed serial communication speed - DO NOT CHANGE
 const ESP32_BAUD_RATE = 115200;
 
-// AGGRESSIVE HARDWARE RESET - Physically resets ESP32 EXACTLY like Arduino IDE
+// AGGRESSIVE HARDWARE RESET - Physically resets ESP32 using Python
 async function hardwareResetESP32(portPath) {
-  return new Promise((resolve) => {
-    try {
-      console.log('🔨 Performing HARDWARE RESET on ESP32 (Arduino IDE style)...');
-      const p = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      
-      p.open((err) => {
-        if (err) {
-          console.log(`⚠️ Hardware reset failed: ${err.message}`);
-          return resolve(false);
-        }
-        
-        // ESP32 boot mode control (corrected mapping):
-        // DTR controls GPIO0: LOW = bootloader, HIGH = normal boot
-        // RTS controls EN (reset): LOW = reset, HIGH = normal
-        
-        // Step 1: Set initial state (GPIO0 HIGH for normal boot, EN HIGH)
-        p.set({ dtr: true, rts: true }, (err1) => {
-          if (err1) {
-            console.log(`⚠️ Reset step 1 failed: ${err1.message}`);
-            p.close(() => { try { p.destroy(); } catch {} });
-            return resolve(false);
-          }
-          
-          setTimeout(() => {
-            // Step 2: Pull EN low (reset) while keeping GPIO0 HIGH (normal boot)
-            p.set({ dtr: true, rts: false }, (err2) => {
-              if (err2) {
-                console.log(`⚠️ Reset step 2 failed: ${err2.message}`);
-                p.close(() => { try { p.destroy(); } catch {} });
-                return resolve(false);
-              }
-              
-              setTimeout(() => {
-                // Step 3: Release EN (boot normally with GPIO0 HIGH)
-                p.set({ dtr: true, rts: true }, (err3) => {
-                  if (err3) {
-                    console.log(`⚠️ Reset step 3 failed: ${err3.message}`);
-                  }
-                  
-                  setTimeout(() => {
-                    p.removeAllListeners();
-                    p.close(() => {
-                      try { p.destroy(); } catch {}
-                      console.log('✅ Hardware reset complete (Arduino IDE style)');
-                      resolve(true);
-                    });
-                  }, 300);  // Wait for ESP32 to start booting
-                });
-              }, 150);  // Hold reset for 150ms
-            });
-          }, 100);  // Initial delay
-        });
-      });
-    } catch (e) {
-      console.log(`⚠️ Hardware reset exception: ${e.message}`);
-      resolve(false);
+  try {
+    console.log('🔨 Performing HARDWARE RESET on ESP32 (Python-based)...');
+    const pythonPath = await findPythonPath();
+    const success = await hardwareResetPython(pythonPath, portPath, 'normal');
+    if (success) {
+      console.log('✅ Hardware reset complete');
+    } else {
+      console.log('⚠️ Hardware reset failed');
     }
-  });
+    return success;
+  } catch (e) {
+    console.log(`⚠️ Hardware reset exception: ${e.message}`);
+    return false;
+  }
 }
 
 // Utility: Force reset USB device on Windows (aggressive recovery)
@@ -398,403 +605,288 @@ async function forceResetUSBPort(portPath) {
 }
 
 // Utility: Recover port from bad state (Windows-specific)
-async function recoverPortState(portPath) {
-  return new Promise(async (resolve) => {
-    try {
-      console.log(`🔧 Attempting to recover port ${portPath}...`);
-      
-      // Step 1: Kill all processes that might be using the port
-      await killEsptoolProcesses();
-      await delay(1000);
-      
-      // Step 2: On Windows, try aggressive USB reset first (DISABLED - can cause ports to disappear)
-      // if (process.platform === 'win32') {
-      //   await forceResetUSBPort(portPath);
-      //   await delay(2000);
-      // }
-      
-      // Step 3: On Windows, use mode command to reset port state
-      if (process.platform === 'win32') {
-        try {
+// resetMode:
+// - 'normal' (default): reset board to normal boot
+// - 'bootloader': reset board into bootloader mode (safer for flashing reliability)
+// - 'none': do not toggle DTR/RTS at all (only kill processes + mode reset)
+async function recoverPortState(portPath, resetMode = 'normal') {
+  try {
+    console.log(`🔧 Attempting to recover port ${portPath}...`);
+    
+    // Step 1: Kill all processes that might be using the port
+    await killEsptoolProcesses();
+    await delay(1000);
+    
+    // Step 2: On Windows, use mode command to reset port state
+    if (process.platform === 'win32') {
+      try {
+        await new Promise((resolve) => {
           exec(`mode ${portPath} BAUD=115200 PARITY=N DATA=8 STOP=1`, { timeout: 3000 }, (err) => {
             if (!err) {
               console.log(`✅ Windows port reset command executed`);
             }
+            resolve();
           });
-          await delay(1000);
-        } catch (modeErr) {
-          console.log(`Note: Windows mode command failed: ${modeErr.message}`);
+        });
+        await delay(1000);
+      } catch (modeErr) {
+        console.log(`Note: Windows mode command failed: ${modeErr.message}`);
+      }
+    }
+    
+    // Step 3: Try hardware reset using Python (optional)
+    if (resetMode !== 'none') {
+      try {
+        const pythonPath = await findPythonPath();
+        await hardwareResetPython(pythonPath, portPath, resetMode);
+        console.log(`✅ Port recovery attempted (${resetMode})`);
+      } catch (resetErr) {
+        console.log(`Note: Port reset failed: ${resetErr.message}`);
+      }
+    }
+    
+    await delay(1000);
+    return true;
+  } catch (e) {
+    console.log(`⚠️ Port recovery exception: ${e.message}`);
+    await delay(1000);
+    return true; // Don't block on recovery failure
+  }
+}
+
+// Utility: Enter bootloader mode on ESP32 using Python
+async function enterBootloaderMode(portPath) {
+  try {
+    console.log('🔧 Entering bootloader mode...');
+    safeSend('terminal-output', '[INFO] Entering bootloader mode...');
+    
+    const pythonPath = await findPythonPath();
+    const success = await hardwareResetPython(pythonPath, portPath, 'bootloader');
+    
+    if (success) {
+      console.log('✅ Bootloader mode entry sequence complete');
+      safeSend('terminal-output', '[SUCCESS] Bootloader mode entered');
+      
+      // CRITICAL: Kill only serial-related Python processes (smarter approach)
+      console.log('🔄 Cleaning up serial processes...');
+      await killEsptoolProcesses();
+      
+      // Verify port still exists after Python cleanup
+      console.log('🔍 Verifying port exists...');
+      const portCheck = await verifyPortExists(pythonPath, portPath);
+      
+      if (!portCheck.exists) {
+        console.error(`❌ Port ${portPath} disappeared after bootloader entry!`);
+        safeSend('terminal-output', `[ERROR] Port ${portPath} is no longer available`);
+        safeSend('terminal-output', `[INFO] Please unplug and replug the USB cable`);
+        if (portCheck.available_ports && portCheck.available_ports.length > 0) {
+          safeSend('terminal-output', `[INFO] Available ports: ${portCheck.available_ports.join(', ')}`);
         }
+        return false;
       }
       
-      // Step 3: Try to open and immediately close the port to reset its state
-      const recoveryPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
+      console.log(`✅ Port ${portPath} verified as available`);
       
-      recoveryPort.open((err) => {
-        if (err) {
-          console.log(`⚠️ Port recovery open failed: ${err.message}`);
-          // Try to destroy anyway
-          try { recoveryPort.destroy(); } catch {}
-          // Still resolve true - we tried our best
-          setTimeout(() => resolve(true), 1000);
-          return;
-        }
-        
-        // Set port to known good state (normal boot)
-        recoveryPort.set({ dtr: true, rts: true }, () => {
-          setTimeout(() => {
-            // Try to reset to bootloader state briefly, then back to normal
-            recoveryPort.set({ dtr: false, rts: false }, () => {
-              setTimeout(() => {
-                recoveryPort.set({ dtr: true, rts: true }, () => {
-                  setTimeout(() => {
-                    recoveryPort.removeAllListeners();
-                    recoveryPort.close((closeErr) => {
-                      try { 
-                        recoveryPort.destroy(); 
-                      } catch (destroyErr) {
-                        console.log(`Warning: Error destroying recovery port: ${destroyErr.message}`);
-                      }
-                      console.log('✅ Port recovery attempted');
-                      setTimeout(() => resolve(true), 1000); // Longer delay for Windows
-                    });
-                  }, 200);
-                });
-              }, 100);
-            });
-          }, 200);
-        });
-      });
-    } catch (e) {
-      console.log(`⚠️ Port recovery exception: ${e.message}`);
-      // Still resolve true - don't block on recovery failure
-      setTimeout(() => resolve(true), 1000);
-    }
-  });
-}
-
-// Utility: Enter bootloader mode on ESP32 (REPL-independent)
-async function enterBootloaderMode(portPath) {
-  return new Promise((resolve) => {
-    let bootPort = null;
-    try {
-      console.log('🔧 Entering bootloader mode...');
-      safeSend('terminal-output', '[INFO] Entering bootloader mode...');
+      // Wait for port to be fully ready
+      console.log('⏳ Waiting for port to be ready...');
+      await delay(1500);
       
-      bootPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      bootPort.open((err) => {
-        if (err) {
-          console.log(`⚠️ Bootloader entry failed: ${err.message}`);
-          safeSend('terminal-output', `[WARNING] Automatic bootloader entry failed`);
-          safeSend('terminal-output', `[INFO] Please manually press BOOT button and try again`);
-          // Try to recover port state
-          try { if (bootPort) bootPort.destroy(); } catch {}
-          recoverPortState(portPath).then(() => resolve(false));
-          return;
-        }
-        
-        // ESP32 bootloader entry sequence:
-        // DTR low = GPIO0 low (boot mode)
-        // RTS low = EN low (reset)
-        // Then release RTS (EN high) while keeping DTR low (GPIO0 low)
-        bootPort.set({ dtr: false, rts: false }, () => {
-          setTimeout(() => {
-            // Release reset but keep GPIO0 low
-            bootPort.set({ dtr: false, rts: true }, () => {
-              setTimeout(() => {
-                // CRITICAL: Properly close and destroy port, then wait for Windows to release it
-                bootPort.removeAllListeners();
-                bootPort.close((closeErr) => {
-                  try { 
-                    bootPort.destroy(); 
-                  } catch (destroyErr) {
-                    console.log(`Warning: Error destroying bootloader port: ${destroyErr.message}`);
-                  }
-                  console.log('✅ Bootloader mode entry sequence complete');
-                  safeSend('terminal-output', '[SUCCESS] Bootloader mode entered');
-                  // Wait for Windows to fully release the port handle
-                  setTimeout(() => {
-                    resolve(true);
-                  }, 500); // Additional delay for Windows port release
-                });
-              }, 200);
-            });
-          }, 150);
-        });
-      });
-    } catch (e) {
-      console.log(`⚠️ Bootloader entry exception: ${e.message}`);
-      safeSend('terminal-output', `[WARNING] Bootloader entry failed: ${e.message}`);
+      return true;
+    } else {
+      console.log(`⚠️ Bootloader entry failed`);
+      safeSend('terminal-output', `[WARNING] Automatic bootloader entry failed`);
       safeSend('terminal-output', `[INFO] Please manually press BOOT button and try again`);
-      // Try to recover port state
-      try { if (bootPort) bootPort.destroy(); } catch {}
-      recoverPortState(portPath).then(() => resolve(false));
+      await recoverPortState(portPath, 'normal');
+      return false;
     }
-  });
+  } catch (e) {
+    console.log(`⚠️ Bootloader entry exception: ${e.message}`);
+    safeSend('terminal-output', `[WARNING] Bootloader entry failed: ${e.message}`);
+    safeSend('terminal-output', `[INFO] Please manually press BOOT button and try again`);
+    await recoverPortState(portPath, 'bootloader');
+    return false;
+  }
 }
 
-// Utility: Reset ESP32 to normal boot mode (GPIO0 HIGH, EN HIGH)
+// Utility: Reset ESP32 to normal boot mode using Python
 async function normalBootReset(portPath) {
-  return new Promise((resolve) => {
-    try {
-      console.log('🔄 Resetting ESP32 to normal boot mode...');
-      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      resetPort.open((err) => {
-        if (err) {
-          console.log(`⚠️ Normal boot reset failed: ${err.message}`);
-          return resolve(false);
-        }
-        
-        // ESP32 boot mode control:
-        // DTR controls GPIO0: LOW = bootloader, HIGH = normal boot
-        // RTS controls EN (reset): LOW = reset, HIGH = normal
-        
-        // Step 1: Ensure GPIO0 is HIGH (normal boot) and EN is HIGH (not reset)
-        resetPort.set({ dtr: true, rts: true }, () => {
-          setTimeout(() => {
-            // Step 2: Pull EN low to reset (while keeping GPIO0 HIGH for normal boot)
-            resetPort.set({ dtr: true, rts: false }, () => {
-              setTimeout(() => {
-                // Step 3: Release EN (boot normally with GPIO0 HIGH)
-                resetPort.set({ dtr: true, rts: true }, () => {
-                  setTimeout(() => {
-                    // Step 4: Double-check GPIO0 is HIGH (some boards need this)
-                    resetPort.set({ dtr: true, rts: true }, () => {
-                      setTimeout(() => {
-                        resetPort.close(() => {
-                          try { resetPort.destroy(); } catch {}
-                          console.log('✅ Normal boot reset complete');
-                          resolve(true);
-                        });
-                      }, 300); // Give time for signals to stabilize
-                    });
-                  }, 200); // Hold reset for 200ms
-                });
-              }, 150); // Hold reset for 150ms
-            });
-          }, 200); // Initial delay to ensure port is ready
-        });
-      });
-    } catch (e) {
-      console.log(`⚠️ Normal boot reset exception: ${e.message}`);
-      resolve(false);
+  try {
+    console.log('🔄 Resetting ESP32 to normal boot mode...');
+    const pythonPath = await findPythonPath();
+    const success = await hardwareResetPython(pythonPath, portPath, 'normal');
+    if (success) {
+      console.log('✅ Normal boot reset complete');
+    } else {
+      console.log('⚠️ Normal boot reset failed');
     }
-  });
+    return success;
+  } catch (e) {
+    console.log(`⚠️ Normal boot reset exception: ${e.message}`);
+    return false;
+  }
 }
 
-// Utility: check if port is available
+// Utility: check if port is available using Python
 async function isPortAvailable(portPath) {
-  return new Promise((resolve) => {
-    try {
-      console.log(`🔍 Testing port availability for ${portPath}...`);
-      const testPort = new SerialPort({ 
-        path: portPath, 
-        baudRate: ESP32_BAUD_RATE,  // Fixed: 115200 for this ESP32 board
-        autoOpen: false,
-        timeout: 1000
-      });
-      
-      testPort.open((err) => {
-        if (err) {
-          console.log(`❌ Port ${portPath} is not available: ${err.message}`);
-          try {
-            testPort.destroy();
-          } catch (destroyErr) {
-            console.log(`Warning: Error destroying test port: ${destroyErr.message}`);
-          }
-          resolve(false);
-        } else {
-          console.log(`✅ Port ${portPath} is available`);
-          testPort.close((closeErr) => {
-            try {
-              testPort.destroy();
-            } catch (destroyErr) {
-              console.log(`Warning: Error destroying test port: ${destroyErr.message}`);
-            }
-            resolve(true);
-          });
-        }
-      });
-    } catch (error) {
-      console.log(`❌ Error creating test port for ${portPath}: ${error.message}`);
-      resolve(false);
+  try {
+    console.log(`🔍 Testing port availability for ${portPath}...`);
+    const pythonPath = await findPythonPath();
+    const result = await testSerialConnection(pythonPath, portPath);
+    if (result) {
+      console.log(`✅ Port ${portPath} is available`);
+    } else {
+      console.log(`❌ Port ${portPath} is not available`);
     }
-  });
+    return result;
+  } catch (error) {
+    console.log(`❌ Error testing port ${portPath}: ${error.message}`);
+    return false;
+  }
 }
 
-// Utility: Kill any lingering esptool processes that might be locking the port
+// Utility: Kill any lingering Python/esptool processes that might be locking the port
 async function killEsptoolProcesses() {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     try {
       const isWindows = process.platform === 'win32';
       
       if (isWindows) {
-        // Kill esptool/python processes that might be using the port
-        exec('taskkill /F /FI "WINDOWTITLE eq *esptool*" /T 2>nul', { timeout: 3000 }, (err) => {
-          // Ignore errors - process might not exist
-          console.log('🔄 Cleaned up any lingering esptool processes');
-          resolve();
+        // SMARTER: Only kill Python processes related to serial/esptool
+        // Killing ALL Python processes can cause Windows to lose track of COM ports
+        console.log('🔄 Killing serial-related Python processes...');
+        
+        // Method 1: Kill python processes with "serial" in command line
+        await new Promise((res) => {
+          exec('wmic process where "name=\'python.exe\' and commandline like \'%serial%\'" call terminate 2>nul', 
+            { timeout: 2000 }, () => res());
         });
+        
+        await delay(500);
+        
+        // Method 2: Kill esptool-specific processes
+        await new Promise((res) => {
+          exec('wmic process where "name=\'python.exe\' and commandline like \'%esptool%\'" call terminate 2>nul',
+            { timeout: 2000 }, () => res());
+        });
+        
+        await delay(500);
+        
+        // Method 3: Fallback - kill by window title (less aggressive)
+        await new Promise((res) => {
+          exec('taskkill /F /FI "WINDOWTITLE eq *esptool*" /T 2>nul', { timeout: 1500 }, () => res());
+        });
+        
+        console.log('✅ Serial-related Python processes terminated');
+        
       } else {
         // On Unix-like systems, use pkill
-        exec('pkill -9 -f esptool', { timeout: 3000 }, (err) => {
-          console.log('🔄 Cleaned up any lingering esptool processes');
-          resolve();
+        exec('pkill -9 -f "python.*(serial-helper|serial-monitor|esptool)"', { timeout: 3000 }, () => {
+          console.log('✅ Cleaned up Python/esptool processes');
         });
       }
       
-      // Resolve after timeout regardless
-      setTimeout(() => resolve(), 2000);
+      // Wait for Windows to release COM port handles
+      console.log('⏳ Waiting for Windows to release COM port...');
+      await delay(1500); // Reduced - less aggressive killing needs less wait
+      console.log('✅ Port should be released');
+      
+      resolve();
     } catch (e) {
       console.log('Warning: Error killing processes:', e.message);
+      await delay(1000);
       resolve();
     }
   });
 }
 
-// Utility: best-effort COM port release on Windows and wait for readiness
+// Utility: AGGRESSIVE COM port release (Arduino IDE style)
 async function releaseComPortIfNeeded(portPath) {
   try {
     console.log(`🔄 Releasing port ${portPath}...`);
     safeSend('terminal-output', `[INFO] Closing serial monitor...`);
     
-    // STEP 1: Kill any lingering esptool processes first
-    await killEsptoolProcesses();
+    // STEP 1: Close serial monitor if running
+    if (serialMonitorProcess) {
+      console.log('🔄 Killing serial monitor process...');
+      try {
+        serialMonitorProcess.kill('SIGKILL');  // Force kill
+        serialMonitorProcess = null;
+        safeSend('terminal-output', '[Serial Monitor Closed]');
+      } catch (killErr) {
+        console.log(`Warning: Error killing serial monitor: ${killErr.message}`);
+      }
+    }
+    currentPort = null;
+    
     await delay(500);
     
-    // STEP 2: Close our open handle if any - CRITICAL: Must close before esptool can use it
-    if (currentPort) {
-      console.log('🔄 Closing current serial port...');
-      try {
-        currentPort.removeAllListeners();
-        if (currentPort.isOpen) {
-          await new Promise((res) => {
-            const timeout = setTimeout(() => {
-              console.log('⚠️ Port close timeout, forcing destroy...');
-              res();
-            }, 2000);
-            currentPort.close(() => {
-              clearTimeout(timeout);
-              res();
-            });
-          });
-        }
-        try {
-          currentPort.destroy();
-        } catch (destroyErr) {
-          console.log(`Warning: Error destroying port: ${destroyErr.message}`);
-        }
-        currentPort = null;
-        safeSend('terminal-output', '[Serial Port Closed]');
-      } catch (closeErr) {
-        console.log(`Warning: Error closing current port: ${closeErr.message}`);
-        try {
-          if (currentPort) {
-            currentPort.destroy();
-            currentPort = null;
-          }
-        } catch (e) {
-          console.log(`Warning: Error in force destroy: ${e.message}`);
-        }
-      }
-    }
-
-    // STEP 3: Force release port on Windows using mode command (if available)
+    // STEP 2: Kill ALL Python processes that might be holding the port
+    console.log('🔄 Killing all Python serial processes...');
+    await killEsptoolProcesses();
+    await delay(1000);  // Critical wait for Windows
+    
+    // STEP 3: On Windows, use devcon or mode to reset port (if available)
     if (process.platform === 'win32') {
       try {
-        // Use Windows mode command to force release the COM port
-        exec(`mode ${portPath} BAUD=115200 PARITY=N DATA=8 STOP=1`, { timeout: 2000 }, (err) => {
-          if (!err) {
-            console.log(`✅ Windows port release command executed`);
-          }
+        // Method 1: Use Windows mode command to force COM port reset
+        await new Promise((resolve) => {
+          exec(`mode ${portPath} BAUD=115200 PARITY=N DATA=8 STOP=1`, { timeout: 2000 }, (err, stdout, stderr) => {
+            if (!err) {
+              console.log(`✅ Windows port reset via mode command`);
+            }
+            resolve();
+          });
         });
-        await delay(300); // Brief delay after mode command
+        await delay(500);
       } catch (modeErr) {
-        console.log(`Note: Windows mode command not available: ${modeErr.message}`);
+        console.log(`Note: Windows mode command failed: ${modeErr.message}`);
+      }
+      
+      // Method 2: Try to quickly open and close the port to force release
+      try {
+        const pythonPath = await findPythonPath();
+        console.log('🔄 Testing port availability...');
+        await testSerialConnection(pythonPath, portPath);
+        await delay(1000);  // Extra wait after test
+      } catch (testErr) {
+        console.log(`Note: Port test failed: ${testErr.message}`);
       }
     }
     
-    // STEP 4: Wait longer for Windows to release the handle
+    // STEP 4: Final wait for Windows to fully release the handle
     safeSend('terminal-output', `[INFO] Waiting for port to be released...`);
-    await delay(2000); // Increased delay for Windows COM port release
+    await delay(2000); // Critical wait for Windows COM port release
     
-    console.log(`[SUCCESS] Port ${portPath} released successfully`);
+    console.log(`✅ Port ${portPath} released successfully`);
     safeSend('terminal-output', `[SUCCESS] Port ${portPath} released, ready for upload`);
   } catch (error) {
-      console.error(`[ERROR] Error releasing port ${portPath}:`, error.message);
+    console.error(`❌ Error releasing port ${portPath}:`, error.message);
     safeSend('terminal-output', `[WARNING] Port release had issues: ${error.message}`);
+    // Still continue - esptool might work anyway
   }
 }
 
 // Utility: quick hard reset using DTR/RTS (keep GPIO0 high)
 async function hardResetPort(portPath) {
-  return new Promise((resolve) => {
-    try {
-      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      resetPort.open((err) => {
-        if (err) {
-          console.log(`Warning: hardResetPort open failed: ${err.message}`);
-          return resolve();
-        }
-        // RTS low (reset), DTR high (GPIO0 high), then release reset
-        resetPort.set({ dtr: true, rts: false }, () => {
-          setTimeout(() => {
-            resetPort.set({ dtr: true, rts: true }, () => {
-              setTimeout(() => {
-                resetPort.close(() => {
-                  try { resetPort.destroy(); } catch {}
-                  resolve();
-                });
-              }, 200);
-            });
-          }, 120);
-        });
-      });
-    } catch (e) {
-      console.log(`Warning: hardResetPort exception: ${e.message}`);
-      resolve();
-    }
-  });
+  try {
+    const pythonPath = await findPythonPath();
+    await hardwareResetPython(pythonPath, portPath, 'normal');
+  } catch (e) {
+    console.log(`Warning: hardResetPort exception: ${e.message}`);
+  }
 }
 
-// Utility: EMERGENCY reset - puts ESP32 in bootloader mode (DTR low = GPIO0 low)
+// Utility: EMERGENCY reset - puts ESP32 in bootloader mode using Python
 // This is MORE AGGRESSIVE than hardResetPort and can interrupt stuck code
 async function emergencyResetToBootloader(portPath) {
-  return new Promise((resolve) => {
-    try {
-      console.log('🚨 EMERGENCY RESET: Putting ESP32 in bootloader mode...');
-      const resetPort = new SerialPort({ path: portPath, baudRate: ESP32_BAUD_RATE, autoOpen: false });
-      resetPort.open((err) => {
-        if (err) {
-          console.log(`Warning: emergencyReset open failed: ${err.message}`);
-          return resolve();
-        }
-        // DTR low + RTS low = GPIO0 low + RESET = Bootloader mode
-        resetPort.set({ dtr: false, rts: false }, () => {
-          setTimeout(() => {
-            // Release RESET but keep GPIO0 low
-            resetPort.set({ dtr: false, rts: true }, () => {
-              setTimeout(() => {
-                // Now release GPIO0 - ESP32 should be in bootloader
-                resetPort.set({ dtr: true, rts: true }, () => {
-                  setTimeout(() => {
-                    resetPort.close(() => {
-                      try { resetPort.destroy(); } catch {}
-                      console.log('✅ ESP32 should now be in bootloader mode');
-                      resolve();
-                    });
-                  }, 300);
-                });
-              }, 200);
-            });
-          }, 150);
-        });
-      });
-    } catch (e) {
-      console.log(`Warning: emergencyReset exception: ${e.message}`);
-      resolve();
-    }
-  });
+  try {
+    console.log('🚨 EMERGENCY RESET: Putting ESP32 in bootloader mode...');
+    const pythonPath = await findPythonPath();
+    await hardwareResetPython(pythonPath, portPath, 'bootloader');
+    console.log('✅ ESP32 should now be in bootloader mode');
+  } catch (e) {
+    console.log(`Warning: emergencyReset exception: ${e.message}`);
+  }
 }
 
 // Utility: Execute esptool command and capture output
@@ -834,11 +926,12 @@ async function executeEsptoolCommand(command, timeoutMs = 30000) {
 }
 
 // Utility: Create filesystem image (LittleFS) from files using mklittlefs CLI ONLY
-async function createFilesystemImage(files, outputPath, pythonPath) {
+async function createFilesystemImage(files, outputPath, pythonPath, fsSizeBytes = (1024 * 1024)) {
   try {
     console.log('📦 Creating filesystem image...');
     safeSend('terminal-output', '[INFO] Creating filesystem image...');
     safeSend('terminal-output', `[INFO] Preparing ${files.length} file(s)...`);
+    safeSend('terminal-output', `[INFO] Filesystem size: ${fsSizeBytes} bytes`);
     
     // Create temporary directory with all files
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'esp32-fs-'));
@@ -850,8 +943,12 @@ async function createFilesystemImage(files, outputPath, pythonPath) {
       if (!fs.existsSync(destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
       }
-      fs.writeFileSync(destPath, file.content, 'utf-8');
-      console.log(`  Added: ${file.name}`);
+      
+      // CRITICAL: Write with UTF-8 encoding, NO BOM
+      // Convert string to Buffer to ensure no BOM is added
+      const buffer = Buffer.from(file.content, 'utf8');
+      fs.writeFileSync(destPath, buffer);
+      console.log(`  Added: ${file.name} (${buffer.length} bytes)`);
     }
     
     // Use ONLY mklittlefs CLI tool (like Arduino IDE / PlatformIO)
@@ -967,7 +1064,7 @@ async function createFilesystemImage(files, outputPath, pythonPath) {
       };
     }
     
-    const mklittlefsCmd = `"${foundPath}" -c "${tmpDir}" -s ${1024 * 1024} "${outputPath}"`;
+    const mklittlefsCmd = `"${foundPath}" -c "${tmpDir}" -s ${fsSizeBytes} "${outputPath}"`;
     
     const result = await new Promise((resolve) => {
       exec(mklittlefsCmd, { timeout: 30000 }, (err, stdout, stderr) => {
@@ -1029,9 +1126,164 @@ async function createFilesystemImage(files, outputPath, pythonPath) {
   }
 }
 
+function parsePartitionTable(partitionTableBin) {
+  const entries = [];
+  if (!partitionTableBin || partitionTableBin.length < 32) return entries;
+
+  const ENTRY_SIZE = 32;
+  const maxEntries = Math.floor(partitionTableBin.length / ENTRY_SIZE);
+
+  for (let i = 0; i < maxEntries; i++) {
+    const off = i * ENTRY_SIZE;
+    const b0 = partitionTableBin[off + 0];
+    const b1 = partitionTableBin[off + 1];
+
+    // End marker (0xFF..)
+    if (b0 === 0xFF && b1 === 0xFF) break;
+
+    // Partition entry magic is 0xAA 0x50
+    if (b0 !== 0xAA || b1 !== 0x50) continue;
+
+    const type = partitionTableBin[off + 2];
+    const subtype = partitionTableBin[off + 3];
+    const offset = partitionTableBin.readUInt32LE(off + 4);
+    const size = partitionTableBin.readUInt32LE(off + 8);
+    // Label is a fixed 16-byte field, typically null-terminated.
+    // Be conservative: stop at 0x00 or 0xFF to avoid decoding garbage.
+    const labelRaw = partitionTableBin.slice(off + 12, off + 28);
+    let label = '';
+    for (let j = 0; j < labelRaw.length; j++) {
+      const v = labelRaw[j];
+      if (v === 0x00 || v === 0xFF) break;
+      label += String.fromCharCode(v);
+    }
+    label = (label || '').trim();
+    const flags = partitionTableBin.readUInt32LE(off + 28);
+
+    entries.push({ type, subtype, offset, size, label, flags });
+  }
+
+  return entries;
+}
+
+function alignUp(value, alignment) {
+  return Math.ceil(value / alignment) * alignment;
+}
+
+function alignDown(value, alignment) {
+  return Math.floor(value / alignment) * alignment;
+}
+
+async function detectFilesystemPartition(portPath, chipType, pythonPath, flashSizeBytes = null) {
+  const chipArg = chipType === 'esp32s2' ? 'esp32s2' :
+                  chipType === 'esp32s3' ? 'esp32s3' :
+                  chipType === 'esp32c3' ? 'esp32c3' : 'esp32';
+
+  const tmpPart = path.join(os.tmpdir(), `esp32-partition-${Date.now()}.bin`);
+  const readHyphenCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} read-flash 0x8000 0xC00 "${tmpPart}"`;
+  const readUnderscoreCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} read_flash 0x8000 0xC00 "${tmpPart}"`;
+
+  // Try modern syntax first, then fallback for older esptool variants
+  let readRes = await executeEsptoolCommand(readHyphenCmd, 30000);
+  if (!readRes.success) {
+    readRes = await executeEsptoolCommand(readUnderscoreCmd, 30000);
+  }
+
+  try {
+    if (!readRes.success || !fs.existsSync(tmpPart)) {
+      return { success: false, error: readRes.error || 'Failed to read partition table' };
+    }
+
+    const buf = fs.readFileSync(tmpPart);
+    const entries = parsePartitionTable(buf);
+    const summarize = (e) =>
+      `${(e.label || '(no-label)')} type=0x${e.type.toString(16)} sub=0x${e.subtype.toString(16)} off=0x${e.offset.toString(16)} size=0x${e.size.toString(16)}`;
+
+    // Prefer label-based match (MicroPython commonly uses "vfs")
+    const preferredLabels = ['vfs', 'littlefs', 'spiffs', 'storage', 'fs'];
+    const lower = (s) => (s || '').toLowerCase();
+
+    let match = null;
+    for (const lbl of preferredLabels) {
+      // Use includes() to tolerate labels like "vfs2" or "vfs_lfs"
+      match = entries.find(e => e.type === 0x01 && lower(e.label).includes(lbl));
+      if (match) break;
+    }
+
+    // If not found by label, try common data subtypes:
+    // FAT=0x81, SPIFFS=0x82, (LittleFS often uses 0x83 in some builds)
+    if (!match) {
+      match = entries.find(e => e.type === 0x01 && [0x81, 0x82, 0x83].includes(e.subtype));
+    }
+
+    // If still not found, pick the best candidate: largest data partition that is NOT NVS/PHY/etc.
+    if (!match && entries.length > 0) {
+      const excludedSubtypes = new Set([
+        0x00, // ota data
+        0x01, // phy
+        0x02, // nvs
+        0x03, // coredump
+        0x04, // nvs_keys
+        0x05, // efuse
+      ]);
+
+      const candidates = entries
+        .filter(e => e.type === 0x01 && !excludedSubtypes.has(e.subtype))
+        .filter(e => e.size >= (256 * 1024)); // filesystem partitions are usually large
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.size - a.size);
+        match = candidates[0];
+      }
+    }
+
+    if (!match) {
+      // Provide diagnostics so we can see what the firmware actually uses.
+      console.log('❌ No filesystem partition matched. Partition table entries:');
+      entries.forEach(e => console.log('  -', summarize(e)));
+
+      // IMPORTANT: Some MicroPython builds do not include a dedicated VFS partition entry.
+      // In that case, the filesystem lives in the remaining free flash after the last partition.
+      // Compute: fsOffset = end_of_last_partition, fsSize = flashSize - fsOffset
+      if (typeof flashSizeBytes === 'number' && flashSizeBytes > 0 && entries.length > 0) {
+        const lastEnd = entries.reduce((max, e) => Math.max(max, e.offset + e.size), 0);
+        const fsOffset = alignUp(lastEnd, 0x1000);
+        const fsSize = alignDown(flashSizeBytes - fsOffset, 0x1000);
+
+        if (fsSize > 0) {
+          console.log(`✅ Using computed free-flash filesystem region: off=0x${fsOffset.toString(16)} size=0x${fsSize.toString(16)}`);
+          return {
+            success: true,
+            chipArg,
+            offset: fsOffset,
+            size: fsSize,
+            label: 'free-flash',
+            subtype: null,
+            computed: true,
+            entries
+          };
+        }
+      }
+
+      return { success: false, error: 'No filesystem partition found in partition table', entries };
+    }
+
+    return {
+      success: true,
+      chipArg,
+      offset: match.offset,
+      size: match.size,
+      label: match.label || '',
+      subtype: match.subtype
+    };
+  } finally {
+    try { fs.unlinkSync(tmpPart); } catch (e) {}
+  }
+}
+
 
 // Utility: Flash filesystem image to ESP32 using esptool
-async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pythonPath) {
+async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pythonPath, fsOffsetOverride = null, fsSizeOverride = null) {
   try {
     console.log('📤 Flashing filesystem image...');
     safeSend('terminal-output', '[INFO] Flashing filesystem image...');
@@ -1043,15 +1295,25 @@ async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pytho
     // CRITICAL: Force port recovery before flashing
     console.log('🔧 Recovering port state before flash...');
     safeSend('terminal-output', '[INFO] Preparing port for flash operation...');
-    await recoverPortState(portPath);
+    await recoverPortState(portPath, 'bootloader');
     await delay(1000);
     
-    let fsOffset = 0x200000; // Default 2MB offset for 4MB flash (properly 4KB-aligned)
-    
-    if (flashSize <= 2 * 1024 * 1024) {
-      fsOffset = 0x100000; // 1MB offset for 2MB flash (aligned)
-    } else if (flashSize >= 8 * 1024 * 1024) {
-      fsOffset = 0x300000; // 3MB offset for 8MB+ flash (aligned)
+    let fsOffset = 0x200000; // fallback heuristic
+    let fsSize = 1024 * 1024; // fallback size (1MB)
+
+    // Prefer detected partition values (correct for each firmware/board)
+    if (typeof fsOffsetOverride === 'number' && typeof fsSizeOverride === 'number') {
+      fsOffset = fsOffsetOverride;
+      fsSize = fsSizeOverride;
+      console.log(`✅ Using detected filesystem partition: offset=0x${fsOffset.toString(16)}, size=0x${fsSize.toString(16)}`);
+      safeSend('terminal-output', `[INFO] Detected filesystem partition: 0x${fsOffset.toString(16)} (size 0x${fsSize.toString(16)})`);
+    } else {
+      // Heuristic fallback (older behavior)
+      if (flashSize <= 2 * 1024 * 1024) {
+        fsOffset = 0x100000;
+      } else if (flashSize >= 8 * 1024 * 1024) {
+        fsOffset = 0x300000;
+      }
     }
     
     console.log(`📍 Filesystem offset: 0x${fsOffset.toString(16)}`);
@@ -1062,55 +1324,74 @@ async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pytho
                     chipType === 'esp32s3' ? 'esp32s3' :
                     chipType === 'esp32c3' ? 'esp32c3' : 'esp32';
     
-    // Add --before default_reset and --after hard_reset for better reliability
-    const flashCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} --before default_reset --after hard_reset write-flash 0x${fsOffset.toString(16)} "${fsImagePath}"`;
+    // CRITICAL FIX: Erase filesystem region FIRST to remove corrupted boot.py
+    // This prevents NameError from leftover garbage data
+    console.log('🧹 Erasing filesystem region to remove any corrupted files...');
+    safeSend('terminal-output', '[INFO] Erasing old filesystem (removing corrupted files)...');
+
+    const eraseHyphenCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} erase-region 0x${fsOffset.toString(16)} 0x${fsSize.toString(16)}`;
+    const eraseUnderscoreCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} erase_region 0x${fsOffset.toString(16)} 0x${fsSize.toString(16)}`;
     
-    console.log(`Executing: ${flashCmd}`);
-    safeSend('terminal-output', `[INFO] Starting flash operation...`);
+    console.log(`Executing erase: ${eraseHyphenCmd}`);
+    let eraseResult = await executeEsptoolCommand(eraseHyphenCmd, 30000);
+    if (!eraseResult.success) {
+      eraseResult = await executeEsptoolCommand(eraseUnderscoreCmd, 30000);
+    }
     
-    // Enhanced retry logic with aggressive recovery
+    if (eraseResult.success) {
+      console.log('✅ Filesystem region erased successfully');
+      safeSend('terminal-output', '[SUCCESS] Old filesystem erased');
+    } else {
+      console.warn('⚠️ Erase failed, will try to overwrite:', eraseResult.error);
+      safeSend('terminal-output', '[WARNING] Erase failed, attempting direct overwrite...');
+    }
+    
+    // Wait for ESP32 to stabilize after erase
+    await delay(2000);
+    
+    // Now flash the new clean filesystem with clean boot.py
+    const flashCmd = `"${pythonPath}" -m esptool --chip ${chipArg} --port ${portPath} --before default-reset --after hard-reset write-flash 0x${fsOffset.toString(16)} "${fsImagePath}"`;
+    
+    console.log(`Executing flash: ${flashCmd}`);
+    safeSend('terminal-output', `[INFO] Flashing new filesystem with clean boot.py...`);
+    
+    // Enhanced retry logic with port verification
     let result;
-    let maxRetries = 5; // Increased from 3 to 5
+    let maxRetries = 5;
     let retries = maxRetries;
     let lastError = null;
     
-    let consecutivePortFailures = 0;
-    const maxPortFailures = 2; // Skip port check after 2 consecutive failures
+    // CRITICAL: Verify port exists BEFORE attempting flash (don't open it)
+    console.log(`🔍 Verifying port ${portPath} exists...`);
+    const portCheck = await verifyPortExists(pythonPath, portPath);
+    
+    if (!portCheck.exists) {
+      console.error(`❌ Port ${portPath} does not exist!`);
+      safeSend('terminal-output', `[ERROR] Port ${portPath} is not available`);
+      safeSend('terminal-output', `[CRITICAL] Please unplug and replug the USB cable`);
+      if (portCheck.available_ports && portCheck.available_ports.length > 0) {
+        safeSend('terminal-output', `[INFO] Available ports: ${portCheck.available_ports.join(', ')}`);
+      } else {
+        safeSend('terminal-output', `[INFO] No COM ports detected at all`);
+      }
+      return { success: false, error: 'Port does not exist. Please unplug/replug USB cable.' };
+    }
+    
+    console.log(`✅ Port ${portPath} verified as present in system`);
     
     while (retries > 0) {
-      // Skip port availability check entirely if we've had failures
-      // The "device not functioning" error means the port check will always fail
-      // but esptool might still be able to work
-      if (consecutivePortFailures < maxPortFailures) {
-        const portAvailable = await isPortAvailable(portPath);
-        if (!portAvailable) {
-          consecutivePortFailures++;
-          console.log(`⚠️ Port not available, attempting aggressive recovery... (${retries} attempts left)`);
-          safeSend('terminal-output', `[WARNING] Port not ready, performing aggressive recovery...`);
-          
-          // Aggressive recovery sequence
-          await killEsptoolProcesses();
-          await delay(1000);
-          await recoverPortState(portPath);
-          await delay(3000); // Longer delay for USB reset to take effect
-          await killEsptoolProcesses();
-          await delay(1000);
-          
-          // If we've failed too many times, skip the check and just try flashing
-          if (consecutivePortFailures >= maxPortFailures) {
-            console.log(`⚠️ Port check failed multiple times, skipping check and attempting flash...`);
-            safeSend('terminal-output', `[INFO] Skipping port check, attempting flash directly...`);
-            safeSend('terminal-output', `[INFO] If this fails, please unplug and replug USB cable`);
-          } else {
-            retries--;
-            continue;
-          }
-        } else {
-          consecutivePortFailures = 0; // Reset counter on success
-        }
-      } else {
-        // Skip port check entirely - just try the flash
-        console.log(`⚠️ Skipping port check (previous failures), attempting flash directly...`);
+      // CLEANUP (but less aggressive - don't kill all Python)
+      console.log(`🔧 Cleaning up for flash attempt ${maxRetries - retries + 1}/${maxRetries}...`);
+      
+      await killEsptoolProcesses();
+      await delay(1500);
+      
+      // Don't test port availability (it opens the port and causes issues)
+      // Just wait and try esptool
+      if (retries < maxRetries) {
+        console.log(`ℹ️  Retry ${maxRetries - retries + 1}/${maxRetries} - attempting flash directly...`);
+        safeSend('terminal-output', `[INFO] Retry ${maxRetries - retries + 1}/${maxRetries}...`);
+        await delay(2000);
       }
       
       result = await executeEsptoolCommand(flashCmd, 90000); // Increased timeout to 90 seconds
@@ -1144,7 +1425,7 @@ async function flashFilesystem(portPath, fsImagePath, chipType, flashSize, pytho
         await delay(1000);
         await emergencyResetToBootloader(portPath);
         await delay(1000);
-        await recoverPortState(portPath);
+        await recoverPortState(portPath, 'bootloader');
         await delay(1500);
         
         safeSend('terminal-output', `[INFO] Retrying flash operation...`);
@@ -1224,7 +1505,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, '..', 'ui', 'assets', 'logo.jpg'),
+    icon: path.join(__dirname, '..', 'ui', 'assets', 'logo.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1244,7 +1525,13 @@ function createWindow() {
   });
   
   mainWindow.on('closed', () => {
-    if (currentPort && currentPort.isOpen) currentPort.close();
+    if (serialMonitorProcess) {
+      try {
+        serialMonitorProcess.kill();
+      } catch (e) {
+        console.error('Error killing serial monitor:', e);
+      }
+    }
     mainWindow = null;
   });
 }
@@ -1257,12 +1544,13 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// ---- Serial Port Management with Firmware Detection ----
+// ---- Serial Port Management ----
 ipcMain.handle('list-serial-ports', async () => {
   try {
     console.log('🔍 Listing serial ports...');
-    const ports = await SerialPort.list();
-    console.log(`✅ Found ${ports.length} port(s) from SerialPort.list()`);
+    const pythonPath = await findPythonPath();
+    const ports = await listSerialPorts(pythonPath);
+    console.log(`✅ Found ${ports.length} port(s) from Python serial helper`);
     
     if (ports.length === 0) {
       console.log('⚠️ No ports detected - this might be due to USB port issues');
@@ -1270,67 +1558,21 @@ ipcMain.handle('list-serial-ports', async () => {
       return [];
     }
     
-    // Enhance port information with firmware detection and board type
-    // Use Promise.allSettled to prevent one port from blocking others
-    const portPromises = ports.map(async (port) => {
-      try {
-        // Detect board type based on port information
-        const boardType = detectBoardType(port);
-        
-        // Quick firmware check (with short timeout) - skip if port is in bad state
-        let firmwareInfo = { type: 'unknown', compatible: false };
-        try {
-          firmwareInfo = await detectFirmwareType(port.path);
-        } catch (fwErr) {
-          console.log(`⚠️ Firmware detection skipped for ${port.path}: ${fwErr.message}`);
-        }
-        
-        return {
-          ...port,
-          boardType: boardType,
-          hasMicroPython: firmwareInfo.compatible,
-          firmwareType: firmwareInfo.type,
-          recommended: firmwareInfo.compatible
-        };
-      } catch (error) {
-        console.log(`⚠️ Error enhancing port ${port.path}: ${error.message}`);
-        return {
-          ...port,
-          boardType: detectBoardType(port),
-          hasMicroPython: false,
-          firmwareType: 'unknown',
-          recommended: false
-        };
-      }
-    });
+    // IMPORTANT: Do NOT probe firmware during port listing.
+    // Firmware probing uses esptool (opens COM ports) and can race with Serial Monitor/Upload,
+    // triggering Windows PermissionError(31) "device not functioning".
+    const basicPorts = ports.map((port) => ({
+      ...port,
+      boardType: detectBoardType(port),
+      hasMicroPython: null,
+      firmwareType: 'unknown',
+      recommended: false
+    }));
     
-    const results = await Promise.allSettled(portPromises);
-    const enhancedPorts = results.map((result, index) => {
-      if (result.status === 'fulfilled') {
-        return result.value;
-      } else {
-        console.log(`⚠️ Port enhancement failed for port ${ports[index].path}: ${result.reason}`);
-        return {
-          ...ports[index],
-          boardType: detectBoardType(ports[index]),
-          hasMicroPython: false,
-          firmwareType: 'unknown',
-          recommended: false
-        };
-      }
-    });
-    
-    // Sort: MicroPython ports first
-    enhancedPorts.sort((a, b) => {
-      if (a.hasMicroPython && !b.hasMicroPython) return -1;
-      if (!a.hasMicroPython && b.hasMicroPython) return 1;
-      return 0;
-    });
-    
-    console.log(`✅ Returning ${enhancedPorts.length} enhanced port(s)`);
-    return enhancedPorts;
+    console.log(`✅ Returning ${basicPorts.length} port(s) (no firmware probing)`);
+    return basicPorts;
   } catch (err) {
-    console.error("❌ SerialPort.list() error:", err);
+    console.error("❌ Serial port listing error:", err);
     console.error("Stack:", err.stack);
     return [];
   }
@@ -1338,15 +1580,37 @@ ipcMain.handle('list-serial-ports', async () => {
 
 ipcMain.handle('open-serial-port', async (_e, portPath, baudRate = ESP32_BAUD_RATE) => {
   try {
-    if (currentPort && currentPort.isOpen) { 
-      await new Promise(r => currentPort.close(r)); 
-      currentPort = null; 
+    // Close existing serial monitor if running
+    if (serialMonitorProcess) {
+      serialMonitorProcess.kill();
+      serialMonitorProcess = null;
     }
-    currentPort = new SerialPort({ path: portPath, baudRate, autoOpen: false });
-    await new Promise((res, rej) => currentPort.open(err => err ? rej(err) : res()));
-    currentPort.on('data', d => safeSend('serial-data', d.toString()));
-    currentPort.on('error', e => safeSend('serial-data', `\n[Serial Error]: ${e.message}\n`));
-    currentPort.on('close', () => safeSend('serial-data', `\n[Serial Port Closed]\n`));
+    
+    const pythonPath = await findPythonPath();
+    const scriptPath = getScriptPath('serial-monitor.py');
+    
+    // Start Python serial monitor
+    serialMonitorProcess = spawn(pythonPath, [scriptPath, portPath, baudRate.toString()]);
+    
+    // Handle stdout (serial data)
+    serialMonitorProcess.stdout.on('data', (data) => {
+      safeSend('serial-data', data.toString());
+    });
+    
+    // Handle stderr (errors)
+    serialMonitorProcess.stderr.on('data', (data) => {
+      safeSend('serial-data', `\n[Serial Error]: ${data.toString()}\n`);
+    });
+    
+    // Handle process exit
+    serialMonitorProcess.on('close', (code) => {
+      safeSend('serial-data', `\n[Serial Port Closed]\n`);
+      serialMonitorProcess = null;
+    });
+    
+    // Store current port path for reference
+    currentPort = portPath;
+    
     return { success: true };
   } catch (err) { 
     return { success: false, error: err.message }; 
@@ -1356,26 +1620,19 @@ ipcMain.handle('open-serial-port', async (_e, portPath, baudRate = ESP32_BAUD_RA
 // Send data to serial port (Serial Monitor functionality)
 ipcMain.handle('send-serial-data', async (_e, portPath, data) => {
   try {
-    if (!currentPort || !currentPort.isOpen) {
+    if (!currentPort) {
       return { success: false, error: 'Port not open' };
     }
     
-    // Write data to serial port and wait for completion
-    return new Promise((resolve) => {
-      currentPort.write(data + '\n', (err) => {
-        if (err) {
-          safeSend('serial-data', `\n[Send Error]: ${err.message}\n`);
-          resolve({ success: false, error: err.message });
-        } else {
-          resolve({ success: true });
-        }
-      });
-      
-      // Timeout after 2 seconds
-      setTimeout(() => {
-        resolve({ success: true }); // Assume success if no error callback
-      }, 2000);
-    });
+    // Use Python to write data to serial port
+    const pythonPath = await findPythonPath();
+    const result = await executePythonSerial(pythonPath, ['write', portPath, data]);
+    
+    if (!result.success) {
+      safeSend('serial-data', `\n[Send Error]: ${result.error}\n`);
+    }
+    
+    return result;
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -1383,41 +1640,17 @@ ipcMain.handle('send-serial-data', async (_e, portPath, data) => {
 
 ipcMain.handle('close-serial-port', async () => {
   try {
-    if (currentPort) {
-      console.log('🔄 Closing serial port via IPC...');
+    if (serialMonitorProcess) {
+      console.log('🔄 Closing serial monitor via IPC...');
       try {
-        currentPort.removeAllListeners();
-        if (currentPort.isOpen) {
-          await new Promise((res) => {
-            const timeout = setTimeout(() => {
-              console.log('⚠️ Port close timeout, forcing destroy...');
-              res();
-            }, 2000);
-            currentPort.close(() => {
-              clearTimeout(timeout);
-              res();
-            });
-          });
-        }
-        try {
-          currentPort.destroy();
-        } catch (destroyErr) {
-          console.log(`Warning: Error destroying port: ${destroyErr.message}`);
-        }
-        currentPort = null;
-        console.log('✅ Serial port closed successfully');
-      } catch (closeErr) {
-        console.log(`Warning: Error closing port: ${closeErr.message}`);
-        try {
-          if (currentPort) {
-            currentPort.destroy();
-            currentPort = null;
-          }
-        } catch (e) {
-          console.log(`Warning: Error in force destroy: ${e.message}`);
-        }
+        serialMonitorProcess.kill();
+        serialMonitorProcess = null;
+        console.log('✅ Serial monitor closed successfully');
+      } catch (killErr) {
+        console.log(`Warning: Error killing serial monitor: ${killErr.message}`);
       }
     }
+    currentPort = null;
     return { success: true };
   } catch (err) { 
     return { success: false, error: err.message }; 
@@ -1668,31 +1901,34 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         const bootloaderSuccess = await enterBootloaderMode(port);
         if (!bootloaderSuccess) {
           safeSend('terminal-output', '[WARNING] Automatic bootloader entry failed');
-          safeSend('terminal-output', '[INFO] Attempting port recovery...');
-          await recoverPortState(port);
-          await delay(1000);
           safeSend('terminal-output', '[INFO] Please manually press BOOT button, then press RESET');
           safeSend('terminal-output', '[INFO] Hold BOOT, press and release RESET, then release BOOT');
           safeSend('terminal-output', '[INFO] Waiting 8 seconds for manual bootloader entry...');
           await delay(8000);
-          safeSend('terminal-output', '[INFO] Recovering port after manual bootloader entry...');
+
+          // After manual bootloader entry, do NOT "normal reset" the device (it can exit bootloader).
+          safeSend('terminal-output', '[INFO] Waiting for port to stabilize after manual bootloader entry...');
           await killEsptoolProcesses();
-          await delay(1000);
-          await recoverPortState(port);
-          await delay(2000);
-          } else {
-            await delay(1000);
-            await recoverPortState(port);
-            await delay(1000);
-          }
-          await delay(2000); // Increased delay after bootloader entry
+          await delay(800);
+          await recoverPortState(port, 'none');
+          await delay(1200);
+        } else {
+          // Small buffer for Windows re-enumeration after automatic bootloader entry
+          await delay(1200);
+        }
+        await delay(1200); // Extra delay after bootloader entry to avoid WinError 31 / busy races
         
         // Step 3: Detect ESP32 chip type and flash size
         safeSend('terminal-output', '[STEP 3/6] Detecting ESP32 chip...');
-        // Ensure port is still available before chip detection
-        await killEsptoolProcesses();
-        await delay(500);
-        const chipInfo = await detectESP32Chip(port, pythonPath);
+        const chipInfo = await detectESP32ChipWithRetry(port, pythonPath, 5);
+        if (!chipInfo || !chipInfo.success) {
+          const msg = chipInfo?.error || 'Could not communicate with ESP32 (chip_id failed)';
+          safeSend('terminal-output', `[ERROR] ESP32 detection failed: ${msg}`);
+          safeSend('terminal-output', `[INFO] This usually means Windows temporarily glitched the USB serial device after reset.`);
+          safeSend('terminal-output', `[INFO] The IDE auto-retried several times. If it still fails, unplug+replug USB, then Upload again.`);
+          res({ success: false, error: `ESP32 detection failed: ${msg}` });
+          return;
+        }
         const chipType = chipInfo.chipType || 'esp32';
         const flashSize = chipInfo.flashSize || 4194304; // Default 4MB
         
@@ -1702,11 +1938,73 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         // Collect all files to upload
         const filesToUpload = [];
         
-        // Add main.py
+        // CRITICAL FIX: Always upload a clean boot.py to prevent NameError corruption
+        // boot.py should ONLY contain system initialization, NO user logic
+        const cleanBootPy = `# Clean boot file - System initialization only
+# Do not remove this file
+# User code goes in main.py, NOT here
+import gc
+gc.collect()
+`;
+        filesToUpload.push({
+          name: 'boot.py',
+          content: cleanBootPy
+        });
+        
+        // CRITICAL: Clean code before uploading (remove BOM, normalize line endings)
+        let cleanCode = code;
+        // Remove BOM (Byte Order Mark) if present
+        if (cleanCode.charCodeAt(0) === 0xFEFF) {
+          cleanCode = cleanCode.slice(1);
+        }
+        // Normalize line endings to Unix style (\n)
+        cleanCode = cleanCode.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        // Remove any null bytes that might corrupt the file
+        cleanCode = cleanCode.replace(/\0/g, '');
+        // Ensure code ends with a newline (Python best practice)
+        if (!cleanCode.endsWith('\n')) {
+          cleanCode += '\n';
+        }
+        
+        // Add main.py (user code goes here)
         filesToUpload.push({
           name: 'main.py',
-          content: code
+          content: cleanCode
         });
+
+        // Detect filesystem partition (offset + size) from the device partition table.
+        // This avoids writing to the wrong region, which can leave corrupted boot.py and break sensors/libs.
+        let fsPartition = null;
+        try {
+          safeSend('terminal-output', '[INFO] Detecting filesystem partition...');
+          const partRes = await detectFilesystemPartition(port, chipType, pythonPath, flashSize);
+          if (partRes.success) {
+            fsPartition = partRes;
+            const tag = partRes.computed ? 'computed' : 'detected';
+            safeSend('terminal-output', `[SUCCESS] Filesystem partition (${tag}): ${partRes.label || 'data'} @ 0x${partRes.offset.toString(16)} (size 0x${partRes.size.toString(16)})`);
+          } else {
+            // If we can't even read partition table, do not continue (avoid flashing wrong region).
+            safeSend('terminal-output', `[ERROR] Could not detect filesystem partition: ${partRes.error || 'unknown error'}`);
+            safeSend('terminal-output', `[INFO] This usually happens when the COM port is not in bootloader mode or is unstable.`);
+            safeSend('terminal-output', `[INFO] Fix: Unplug + replug USB, then Upload again (hold BOOT if needed).`);
+            if (partRes.entries && Array.isArray(partRes.entries) && partRes.entries.length) {
+              safeSend('terminal-output', `[INFO] Partition table entries detected (for debugging):`);
+              partRes.entries.slice(0, 20).forEach(e => {
+                safeSend(
+                  'terminal-output',
+                  `  - ${e.label || '(no-label)'} type=0x${e.type.toString(16)} sub=0x${e.subtype.toString(16)} off=0x${e.offset.toString(16)} size=0x${e.size.toString(16)}`
+                );
+              });
+            }
+            res({ success: false, error: `Partition detection failed: ${partRes.error || 'unknown error'}` });
+            return;
+          }
+        } catch (e) {
+          safeSend('terminal-output', `[ERROR] Partition detection failed: ${e.message}`);
+          safeSend('terminal-output', `[INFO] Fix: Unplug + replug USB, then Upload again.`);
+          res({ success: false, error: `Partition detection failed: ${e.message}` });
+          return;
+        }
         
         // Add helper libraries if referenced
         const helperFiles = [
@@ -1721,9 +2019,23 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         ];
         
         helperFiles.forEach(helper => {
-          if (code.includes(`import ${helper.key}`) && fs.existsSync(helper.path)) {
+          const needsHelper =
+            code.includes(`import ${helper.key}`) ||
+            code.includes(`from ${helper.key} import`);
+
+          if (needsHelper && fs.existsSync(helper.path)) {
             try {
-              const content = fs.readFileSync(helper.path, 'utf-8');
+              let content = fs.readFileSync(helper.path, 'utf-8');
+              // Clean library file content (remove BOM, normalize)
+              if (content.charCodeAt(0) === 0xFEFF) {
+                content = content.slice(1);
+              }
+              content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+              content = content.replace(/\0/g, '');
+              if (!content.endsWith('\n')) {
+                content += '\n';
+              }
+              
               filesToUpload.push({
                 name: `${helper.key}.py`,
                 content: content
@@ -1737,9 +2049,11 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         
         // Step 5: Create filesystem image
         safeSend('terminal-output', '[STEP 5/6] Creating filesystem image...');
+        safeSend('terminal-output', `[INFO] Uploading ${filesToUpload.length} file(s): ${filesToUpload.map(f => f.name).join(', ')}`);
         const fsImagePath = path.join(os.tmpdir(), `esp32-fs-${Date.now()}.bin`);
         
-        const fsImageResult = await createFilesystemImage(filesToUpload, fsImagePath, pythonPath);
+        const fsSizeForImage = (fsPartition && fsPartition.size) ? fsPartition.size : (1024 * 1024);
+        const fsImageResult = await createFilesystemImage(filesToUpload, fsImagePath, pythonPath, fsSizeForImage);
         if (!fsImageResult.success) {
           safeSend('terminal-output', `[ERROR] Failed to create filesystem image: ${fsImageResult.error}`);
           res({ success: false, error: `Filesystem creation failed: ${fsImageResult.error}` });
@@ -1748,7 +2062,15 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         
         // Step 6: Flash filesystem image
         safeSend('terminal-output', '[STEP 6/6] Flashing filesystem to ESP32...');
-        const flashResult = await flashFilesystem(port, fsImagePath, chipType, flashSize, pythonPath);
+        const flashResult = await flashFilesystem(
+          port,
+          fsImagePath,
+          chipType,
+          flashSize,
+          pythonPath,
+          fsPartition ? fsPartition.offset : null,
+          fsPartition ? fsPartition.size : null
+        );
         
         // Cleanup filesystem image
         try {
@@ -2007,7 +2329,8 @@ ipcMain.handle('load-code', async (_e, language = 'python') => {
 // ---- Board Status Check with Firmware Detection ----
 ipcMain.handle('check-board', async () => {
   try {
-    const ports = await SerialPort.list();
+    const pythonPath = await findPythonPath();
+    const ports = await listSerialPorts(pythonPath);
     const identifiers = [
       'usb', 'uart', 'com', 'serial', 'esp32', 'esp8266',
       'arduino', 'raspberry', 'micropython', 'circuitpython'

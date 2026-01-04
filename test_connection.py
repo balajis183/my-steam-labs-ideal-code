@@ -29,32 +29,14 @@ def run_command(cmd, description):
         print(f"❌ Error: {e}")
         return False, str(e)
 
-def test_mpremote_connection(port):
-    """Test the mpremote connection to ESP32"""
-    print(f"\n🎯 Testing connection to {port}")
-    
-    # Test 1: Check if port is available
-    print("\n1️⃣ Checking port availability...")
-    success, output = run_command(f'python -m mpremote devs', "Listing available devices")
+def test_esptool_connection(port):
+    """Test the esptool connection to ESP32 (Steam Labs uses esptool + pyserial)"""
+    print(f"\n🎯 Testing esptool connection to {port}")
+    success, output = run_command(f'python -m esptool --port {port} chip_id', f"Reading chip_id on {port}")
     if not success:
-        print("❌ Cannot list devices")
+        print("❌ esptool connection failed")
         return False
-    
-    # Test 2: Try to connect
-    print("\n2️⃣ Testing connection...")
-    success, output = run_command(f'python -m mpremote connect {port}', f"Connecting to {port}")
-    if not success:
-        print("❌ Connection failed")
-        return False
-    
-    # Test 3: Try to enter raw REPL
-    print("\n3️⃣ Testing raw REPL...")
-    success, output = run_command(f'python -m mpremote connect {port} exec "print(\'Hello from ESP32!\')"', "Testing raw REPL execution")
-    if not success:
-        print("❌ Raw REPL failed")
-        return False
-    
-    print("✅ All connection tests passed!")
+    print("✅ esptool connection OK")
     return True
 
 def cleanup_port(port):
@@ -63,10 +45,7 @@ def cleanup_port(port):
     
     # Kill Python processes
     run_command('taskkill /f /im "python.exe" 2>nul', "Killing Python processes")
-    
-    # Kill mpremote processes
-    run_command('taskkill /f /im "mpremote.exe" 2>nul', "Killing mpremote processes")
-    
+        
     # Force release COM port
     run_command(f'mode {port}: BAUD=115200 PARITY=N DATA=8 STOP=1', f"Force releasing {port}")
     
@@ -86,24 +65,23 @@ def main():
     
     print(f"Target port: {port}")
     
-    # Check if mpremote is available
-    print("\n🔍 Checking mpremote availability...")
-    success, output = run_command('python -m mpremote --version', "Checking mpremote version")
+    # Check if esptool is available
+    print("\n🔍 Checking esptool availability...")
+    success, output = run_command('python -m esptool version', "Checking esptool version")
     if not success:
-        print("❌ mpremote not found. Please install it with: pip install mpremote")
+        print("❌ esptool not found. Please install it with: pip install esptool")
         return
     
     # Clean up port first
     cleanup_port(port)
     
     # Test connection
-    if test_mpremote_connection(port):
+    if test_esptool_connection(port):
         print("\n🎉 Connection test successful! Your ESP32 is working properly.")
-        print("\n💡 If you still get 'could not enter raw repl' in Steam Labs:")
-        print("   1. Make sure Steam Labs is not running")
+        print("\n💡 If Steam Labs still can't upload:")
+        print("   1. Make sure Steam Labs is not running twice")
         print("   2. Close any other programs using the serial port")
-        print("   3. Try uploading code first, then running")
-        print("   4. Check if your ESP32 has MicroPython firmware installed")
+        print("   3. Try unplug/replug USB, then Upload again")
     else:
         print("\n❌ Connection test failed!")
         print("\n🔧 Troubleshooting steps:")

@@ -1,47 +1,75 @@
 {
   "name": "my-steam-lab",
   "version": "1.0.0",
+  "description": "My Steam Labs - Educational Electronics Platform",
+  "author": "Your Name",
   "main": "app/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "postinstall": "electron-builder install-app-deps",
+    "generate:icons": "node scripts/generate-icons.js",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win"
   },
-
   "build": {
     "appId": "com.yourcompany.mysteamlabs",
     "productName": "My Steam Labs",
-    "icon": "ui/assets/logo.jpg",
+    "icon": "ui/assets/logo.ico",
     "win": {
       "target": "nsis",
-      "icon": "ui/assets/logo.jpg"
+      "icon": "ui/assets/logo.ico"
     },
     "files": [
       "**/*",
       "!node_modules/**/*",
-      "!mklittlefs.exe"
+      "!dist/**/*",
+      "!.git/**/*",
+      "!.vscode/**/*"
     ],
     "extraResources": [
       {
         "from": "mklittlefs.exe",
-        "to": ".",
-        "filter": ["**/*"]
+        "to": "."
+      },
+      {
+        "from": "micropython_libraries",
+        "to": "micropython_libraries"
+      },
+      {
+        "from": "ESP32_GENERIC-D2WD-20250809-v1.26.0.bin",
+        "to": "."
+      },
+      {
+        "from": "app/serial-helper.py",
+        "to": "app/"
+      },
+      {
+        "from": "app/serial-monitor.py",
+        "to": "app/"
+      },
+      {
+        "from": "app/verify-port.py",
+        "to": "app/"
       }
     ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "ui/assets/logo.ico",
+      "uninstallerIcon": "ui/assets/logo.ico",
+      "allowElevation": true
     }
   },
-
   "devDependencies": {
     "electron": "^27.0.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "sharp": "^0.34.5",
+    "to-ico": "^1.1.5"
   },
   "dependencies": {
     "blockly": "^12.0.0-beta.4",
-    "python-shell": "^5.0.0",
-    "serialport": "^12.0.0"
+    "python-shell": "^5.0.0"
   }
 }

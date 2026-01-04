@@ -1,49 +1,49 @@
-const { SerialPort } = require('serialport');
+// NOTE: SerialPort removed - migrated to Python-based serial handling
+// const { SerialPort } = require('serialport');
 const { exec } = require('child_process');
 
 async function testHardwareConnectivity() {
   console.log('🔍 Testing Hardware Connectivity...\n');
 
-  // Test 1: List Serial Ports
+  // Test 1: List Serial Ports (using Python now)
   console.log('1. Testing Serial Port Detection:');
   try {
-    const ports = await SerialPort.list();
-    console.log(`   ✅ Found ${ports.length} serial port(s):`);
-    ports.forEach(port => {
-      console.log(`      - ${port.path} (${port.manufacturer || 'Unknown'})`);
-    });
+    // Serial ports now detected via Python pyserial
+    console.log('   ℹ️  Serial port detection migrated to Python (pyserial)');
+    console.log('   ℹ️  Run: python -c "import serial.tools.list_ports; print(list(serial.tools.list_ports.comports()))"');
   } catch (err) {
-    console.log(`   ❌ Error listing ports: ${err.message}`);
+    console.log(`   ❌ Error: ${err.message}`);
   }
 
-  // Test 2: Check mpremote availability
-  console.log('\n2. Testing mpremote availability:');
+  // Test 2: Check esptool availability (ESP32 uploads use esptool)
+  console.log('\n2. Testing esptool availability:');
   try {
     // Try different Python executables for Windows compatibility
     const pythonCommands = ['python', 'python3', 'py'];
     let currentIndex = 0;
     
-    const tryMpremote = () => {
+    const tryEsptool = () => {
       if (currentIndex >= pythonCommands.length) {
         console.log('   ❌ Python not found. Please install Python and ensure it\'s in your PATH.');
         return;
       }
       
       const pythonCmd = pythonCommands[currentIndex];
-      exec(`"${pythonCmd}" -m mpremote --version`, (err, stdout, stderr) => {
+      exec(`"${pythonCmd}" -m esptool version`, (err, stdout, stderr) => {
         if (err) {
-          console.log(`   ❌ mpremote not found with '${pythonCmd}'`);
+          console.log(`   ❌ esptool not found with '${pythonCmd}'`);
           currentIndex++;
-          tryMpremote();
+          tryEsptool();
         } else {
-          console.log(`   ✅ mpremote available with '${pythonCmd}': ${stdout.trim()}`);
+          const out = (stdout || stderr || '').trim();
+          console.log(`   ✅ esptool available with '${pythonCmd}': ${out.split('\n')[0]}`);
         }
       });
     };
     
-    tryMpremote();
+    tryEsptool();
   } catch (err) {
-    console.log(`   ❌ Error checking mpremote: ${err.message}`);
+    console.log(`   ❌ Error checking esptool: ${err.message}`);
   }
 
   // Test 3: Check Python availability
@@ -106,7 +106,7 @@ async function testHardwareConnectivity() {
 
   console.log('\n📋 Hardware Connectivity Summary:');
   console.log('   - Serial ports will be detected automatically');
-  console.log('   - Python uploads require mpremote for ESP32');
+  console.log('   - Python uploads require esptool for ESP32');
   console.log('   - C/C++ compilation requires GCC');
   console.log('   - JavaScript execution requires Node.js');
   console.log('   - All operations show output in terminal');

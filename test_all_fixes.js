@@ -114,7 +114,7 @@ function testUploadSimulation() {
     const steps = [
       'Port preparation',
       'Code validation',
-      'mpremote connection',
+      'esptool connection',
       'File transfer',
       'Execution'
     ];
@@ -138,7 +138,7 @@ function testErrorHandling() {
     const errorScenarios = [
       'No port selected',
       'Python not found',
-      'mpremote not installed',
+      'esptool not installed',
       'Port already in use',
       'ESP32 not responding'
     ];
