@@ -28,7 +28,11 @@
     ],
     "extraResources": [
       {
-        "from": "mklittlefs.exe",
+        "from": "mklittlefs/mklittlefs.exe",
+        "to": "."
+      },
+      {
+        "from": "mklittlefs/libwinpthread-1.dll",
         "to": "."
       },
       {

@@ -13,8 +13,8 @@ import time
 class HCSR04:
     def __init__(self, trigger_pin, echo_pin, echo_timeout_us=30000):
         self.trigger = machine.Pin(trigger_pin, machine.Pin.OUT)
-        # Configure echo pin with pull-down resistor for stable readings
-        self.echo = machine.Pin(echo_pin, machine.Pin.IN, machine.Pin.PULL_DOWN)
+        # Try without pull-down to improve 5V signal detection (not ideal, but may work)
+        self.echo = machine.Pin(echo_pin, machine.Pin.IN)
         self.echo_timeout_us = echo_timeout_us
 
     def _send_pulse_and_wait(self):

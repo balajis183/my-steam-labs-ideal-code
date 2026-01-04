@@ -1940,11 +1940,28 @@ ipcMain.handle('upload-python', async (_e, code, port, boardType = 'unknown') =>
         
         // CRITICAL FIX: Always upload a clean boot.py to prevent NameError corruption
         // boot.py should ONLY contain system initialization, NO user logic
-        const cleanBootPy = `# Clean boot file - System initialization only
-# Do not remove this file
-# User code goes in main.py, NOT here
+        // IMPORTANT: Boot.py ensures the filesystem is properly mounted and accessible
+        const cleanBootPy = `# boot.py - System initialization
+# This file runs automatically when ESP32 boots
+# User code should be in main.py, NOT here
+
 import gc
+import sys
+
+# Ensure filesystem is mounted and accessible
+# MicroPython on ESP32 automatically mounts the filesystem,
+# but we verify it's working correctly
+try:
+    import os
+    # Verify we can access the filesystem
+    files = os.listdir('/')
+    print('[BOOT] Filesystem mounted, found', len(files), 'files')
+except Exception as e:
+    print('[BOOT] Filesystem check:', str(e))
+
+# Garbage collection to free up memory
 gc.collect()
+print('[BOOT] Boot complete, starting main.py...')
 `;
         filesToUpload.push({
           name: 'boot.py',

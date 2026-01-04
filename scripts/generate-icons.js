@@ -3,14 +3,6 @@ const path = require("path");
 const sharp = require("sharp");
 const toIco = require("to-ico");
 
-/**
- * Generates a Windows-friendly .ico from the existing logo image.
- *
- * Key choices:
- * - Uses `fit: cover` so the icon fills the square at small sizes (prevents tiny/distant logo)
- * - Trims surrounding whitespace, then centers and crops
- * - Uses Lanczos3 + mild sharpen for downscales
- */
 async function main() {
   const assetsDir = path.join(__dirname, "..", "ui", "assets");
   const inputJpg = path.join(assetsDir, "logo.jpg");
