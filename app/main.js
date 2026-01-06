@@ -531,6 +531,10 @@ async function findPythonPath() {
       
       if (result.success) {
         console.log(`✅ Found Python: ${result.path} - ${result.version}`);
+        
+        // CRITICAL: Verify pyserial is installed
+        await ensurePyserialInstalled(result.path);
+        
         return result.path;
       }
     } catch (error) {
@@ -538,7 +542,62 @@ async function findPythonPath() {
     }
   }
   
+  // Show user-friendly error dialog
+  const errorMsg = `Python is required but not found on this computer.
+
+📥 To fix this:
+1. Download Python from: https://www.python.org/downloads/
+2. During installation, check "Add Python to PATH"
+3. Restart this application
+
+💡 Python is needed for ESP32 communication (esptool, serial ports)`;
+  
+  dialog.showErrorBox('Python Not Found', errorMsg);
   throw new Error('No Python installation found. Please install Python and ensure it\'s in your PATH.');
+}
+
+// Ensure pyserial is installed (required for COM port detection)
+async function ensurePyserialInstalled(pythonPath) {
+  return new Promise((resolve) => {
+    // Test if pyserial is available
+    const testCmd = `"${pythonPath}" -c "import serial; print('OK')"`;
+    
+    exec(testCmd, { timeout: 5000 }, (err, stdout) => {
+      if (!err && stdout.includes('OK')) {
+        console.log('✅ pyserial is installed');
+        resolve(true);
+        return;
+      }
+      
+      // pyserial missing - try to install it
+      console.log('⚠️  pyserial not found, attempting auto-install...');
+      const installCmd = `"${pythonPath}" -m pip install pyserial --quiet`;
+      
+      exec(installCmd, { timeout: 30000 }, (installErr) => {
+        if (installErr) {
+          console.error('❌ Failed to install pyserial:', installErr.message);
+          
+          // Show user-friendly error
+          dialog.showErrorBox(
+            'Python Package Missing',
+            `The 'pyserial' package is required but not installed.
+
+📥 To fix this manually:
+1. Open Command Prompt (CMD) as Administrator
+2. Run: pip install pyserial
+3. Restart this application
+
+💡 This package is needed to detect COM ports for ESP32.`
+          );
+          
+          resolve(false);
+        } else {
+          console.log('✅ pyserial installed successfully');
+          resolve(true);
+        }
+      });
+    });
+  });
 }
 
 // ⚠️ CRITICAL: Fixed Baud Rate for ESP32 Board
@@ -1555,6 +1614,14 @@ ipcMain.handle('list-serial-ports', async () => {
     if (ports.length === 0) {
       console.log('⚠️ No ports detected - this might be due to USB port issues');
       console.log('💡 Try: Unplug and replug USB cable, or restart the application');
+      
+      // Show helpful notification
+      safeSend('show-notification', {
+        type: 'warning',
+        title: 'No COM Ports Found',
+        message: 'ESP32 not detected. Please check:\n• USB cable is connected\n• ESP32 drivers are installed\n• Device appears in Device Manager'
+      });
+      
       return [];
     }
     
@@ -1574,6 +1641,19 @@ ipcMain.handle('list-serial-ports', async () => {
   } catch (err) {
     console.error("❌ Serial port listing error:", err);
     console.error("Stack:", err.stack);
+    
+    // Show error to user
+    if (err.message.includes('Python')) {
+      // Python-related error already shown in findPythonPath
+      return [];
+    } else {
+      safeSend('show-notification', {
+        type: 'error',
+        title: 'COM Port Detection Failed',
+        message: `Error: ${err.message}\n\nPlease check:\n• Python is installed\n• USB drivers are installed\n• Device Manager shows the COM port`
+      });
+    }
+    
     return [];
   }
 });
